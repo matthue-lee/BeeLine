@@ -71,3 +71,35 @@ def test_repository_partial_when_summary_only(tmp_path):
     assert inserted is True
     assert document.status == DocumentStatus.PARTIAL
     assert document.text_clean == "Short summary text"
+
+
+def test_repository_partial_when_fetch_blocked(tmp_path):
+    config = make_config(tmp_path)
+    database = Database(config)
+    database.create_all()
+    repo = ReleaseRepository(database, config)
+
+    entry = FeedEntry(
+        id=compute_canonical_id("Blocked", "https://example.com/3"),
+        title="Blocked",
+        url="https://example.com/3",
+        published_at=datetime.now(timezone.utc),
+        categories=[],
+        summary="Fallback text",
+        feed_url="https://feed",
+    )
+    fetch = FetchResult(
+        url=entry.url,
+        final_url=entry.url,
+        status_code=403,
+        fetched_at=datetime.now(timezone.utc),
+        content=None,
+        error="blocked",
+    )
+    cleaned = CleanResult(text="Fallback text", word_count=2)
+
+    document, inserted = repo.upsert(entry, fetch, cleaned)
+
+    assert inserted is True
+    assert document.status == DocumentStatus.PARTIAL
+    assert document.provenance.get("article_error") == "blocked"

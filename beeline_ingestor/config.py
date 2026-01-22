@@ -15,9 +15,13 @@ class FeedConfig:
     """Configuration for RSS feed polling."""
 
     urls: List[str] = field(default_factory=lambda: [DEFAULT_FEED])
-    user_agent: str = "BeeLineIngestor/0.1 (+https://example.com/contact)"
-    request_timeout: timedelta = timedelta(seconds=20)
-    max_retries: int = 2
+    user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/119.0.0.0 Safari/537.36 BeeLineIngestor/0.1"
+    )
+    request_timeout: timedelta = timedelta(seconds=30)
+    max_retries: int = 3
     backoff_factor: float = 0.5
 
 

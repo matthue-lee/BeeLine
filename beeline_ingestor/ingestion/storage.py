@@ -89,6 +89,10 @@ class ReleaseRepository:
             if cleaned.text:
                 return DocumentStatus.PARTIAL
             return DocumentStatus.EMPTY_PARSE
+        if fetch and fetch.error:
+            if cleaned.text:
+                return DocumentStatus.PARTIAL
+            return DocumentStatus.FAILED_FETCH
         if cleaned.text:
             return DocumentStatus.PARTIAL
         return DocumentStatus.FAILED_FETCH
@@ -108,4 +112,6 @@ class ReleaseRepository:
                     "article_fetched_at": fetch.fetched_at.isoformat(),
                 }
             )
+            if fetch.error:
+                provenance["article_error"] = fetch.error
         return provenance
