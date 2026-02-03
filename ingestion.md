@@ -157,4 +157,12 @@ Acceptance criteria (definition of "done" for ingestion)\
     2\. Re-running ingestion on the same feeds produces no duplicates and no degraded content.\
     3\. When RSS includes items older than a configured since date, they are ignored unless explicitly backfilling.\
     4\. Logs clearly show run outcomes and per-item decisions (insert/updated/skipped/failure).\
-    5\. A downstream flag or queue entry exists for each successful item to continue the pipeline.
+5\. A downstream flag or queue entry exists for each successful item to continue the pipeline.
+
+Cross-source linking overview
+-----------------------------
+
+-  External news articles are fetched via `python -m beeline_ingestor.crosslink.news_ingestor`, which pulls from configurable RSS feeds (defaults: NZ Herald, RNZ National, Newsroom). Articles are stored in the `news_articles` table.
+-  After each release is ingested, a lightweight cosine-similarity pass compares the release text against the latest external articles. The top matches (default 3) are stored in `release_article_links` with a similarity score and short rationale.
+-  The `/releases` API now includes a `links` array per release (source, title, similarity, URL) so downstream apps can surface corroborating coverage.
+-  Tune feeds or limits via `CROSSLINK_FEEDS`, `CROSSLINK_MAX_ARTICLES`, and `CROSSLINK_LINK_LIMIT` env vars. Articles older than `CROSSLINK_RETENTION_DAYS` (default 60) are pruned automatically to bound storage.

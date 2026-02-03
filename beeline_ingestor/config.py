@@ -8,6 +8,12 @@ from typing import Iterable, List
 
 
 DEFAULT_FEED = "https://www.beehive.govt.nz/releases/feed"
+DEFAULT_NEWS_FEEDS = [
+    "https://www.stuff.co.nz/rss",
+    "https://thespinoff.co.nz/feed",
+    "https://www.rnz.co.nz/rss/national.xml",
+    "https://nzmanufacturer.co.nz/feed/"
+]
 
 
 @dataclass(slots=True)
@@ -15,14 +21,8 @@ class FeedConfig:
     """Configuration for RSS feed polling."""
 
     urls: List[str] = field(default_factory=lambda: [DEFAULT_FEED])
-    user_agent: str = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/119.0.0.0 Safari/537.36 BeeLineIngestor/0.1"
-    )
+    user_agent: str = "BeeLineReleaseMonitor/1.0 (+mailto:matthew.r.c.lee@outlook.com)"
     request_timeout: timedelta = timedelta(seconds=30)
-    max_retries: int = 3
-    backoff_factor: float = 0.5
 
 
 @dataclass(slots=True)
@@ -34,6 +34,16 @@ class DatabaseConfig:
 
 
 @dataclass(slots=True)
+class CrossLinkConfig:
+    """Configuration for cross-source article fetching and linking."""
+
+    feeds: List[str] = field(default_factory=lambda: DEFAULT_NEWS_FEEDS.copy())
+    max_articles: int = 200
+    link_limit: int = 3
+    retention_days: int = 60
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level configuration aggregation."""
 
@@ -41,6 +51,7 @@ class AppConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     min_content_length: int = int(os.getenv("MIN_CONTENT_LENGTH", "200"))
     enable_article_fetch: bool = bool(int(os.getenv("ENABLE_ARTICLE_FETCH", "1")))
+    crosslink: CrossLinkConfig = field(default_factory=CrossLinkConfig)
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -59,19 +70,29 @@ class AppConfig:
         if timeout:
             feeds.request_timeout = timedelta(seconds=int(timeout))
 
-        retries = os.getenv("HTTP_MAX_RETRIES")
-        if retries:
-            feeds.max_retries = int(retries)
+        crosslink = CrossLinkConfig()
+        news_feeds = os.getenv("CROSSLINK_FEEDS")
+        if news_feeds:
+            crosslink.feeds = [u.strip() for u in news_feeds.split(",") if u.strip()]
 
-        backoff = os.getenv("HTTP_BACKOFF_FACTOR")
-        if backoff:
-            feeds.backoff_factor = float(backoff)
+        link_limit = os.getenv("CROSSLINK_LINK_LIMIT")
+        if link_limit:
+            crosslink.link_limit = int(link_limit)
+
+        max_articles = os.getenv("CROSSLINK_MAX_ARTICLES")
+        if max_articles:
+            crosslink.max_articles = int(max_articles)
+
+        retention = os.getenv("CROSSLINK_RETENTION_DAYS")
+        if retention:
+            crosslink.retention_days = int(retention)
 
         return cls(
             feeds=feeds,
             database=DatabaseConfig(),
             min_content_length=int(os.getenv("MIN_CONTENT_LENGTH", "200")),
             enable_article_fetch=bool(int(os.getenv("ENABLE_ARTICLE_FETCH", "1"))),
+            crosslink=crosslink,
         )
 
 

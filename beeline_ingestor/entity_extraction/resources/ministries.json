@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Ministry of Health",
+    "aliases": ["MoH", "Health Ministry", "Te Whatu Ora"]
+  },
+  {
+    "name": "Ministry of Education",
+    "aliases": ["MoE", "Education Ministry", "Te Tāhuhu"]
+  },
+  {
+    "name": "Ministry of Business, Innovation and Employment",
+    "aliases": ["MBIE", "Business Ministry"]
+  },
+  {
+    "name": "Ministry of Primary Industries",
+    "aliases": ["MPI", "Primary Industries Ministry", "Ministry for Primary Industries"]
+  },
+  {
+    "name": "New Zealand Transport Agency",
+    "aliases": ["NZTA", "Waka Kotahi", "Transport Agency"]
+  },
+  {
+    "name": "Treasury",
+    "aliases": ["New Zealand Treasury", "Te Tai Ōhanga"]
+  },
+  {
+    "name": "Ministry for the Environment",
+    "aliases": ["MfE", "Environment Ministry"]
+  },
+  {
+    "name": "Ministry of Justice",
+    "aliases": ["Justice Ministry", "Te Tāhū o te Ture"]
+  }
+]

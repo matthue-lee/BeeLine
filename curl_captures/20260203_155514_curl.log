@@ -1,0 +1,59 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host www.beehive.govt.nz:443 was resolved.
+* IPv6: (none)
+* IPv4: 103.28.251.241
+*   Trying 103.28.251.241:443...
+* Connected to www.beehive.govt.nz (103.28.251.241) port 443
+* ALPN: curl offers h2,http/1.1
+* (304) (OUT), TLS handshake, Client hello (1):
+} [324 bytes data]
+*  CAfile: /etc/ssl/cert.pem
+*  CApath: none
+* (304) (IN), TLS handshake, Server hello (2):
+{ [122 bytes data]
+* (304) (IN), TLS handshake, Unknown (8):
+{ [41 bytes data]
+* (304) (IN), TLS handshake, Certificate (11):
+{ [3247 bytes data]
+* (304) (IN), TLS handshake, CERT verify (15):
+{ [264 bytes data]
+* (304) (IN), TLS handshake, Finished (20):
+{ [36 bytes data]
+* (304) (OUT), TLS handshake, Finished (20):
+} [36 bytes data]
+* SSL connection using TLSv1.3 / AEAD-AES128-GCM-SHA256 / [blank] / UNDEF
+* ALPN: server accepted h2
+* Server certificate:
+*  subject: CN=imperva.com
+*  start date: Jan  6 04:35:45 2026 GMT
+*  expire date: Jul  5 04:35:45 2026 GMT
+*  subjectAltName: host "www.beehive.govt.nz" matched cert's "*.beehive.govt.nz"
+*  issuer: C=BE; O=GlobalSign nv-sa; CN=GlobalSign Atlas R3 DV TLS CA 2025 Q4
+*  SSL certificate verify ok.
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://www.beehive.govt.nz/release/new-community-beds-opening-ahead-schedule-waikato
+* [HTTP/2] [1] [:method: GET]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: www.beehive.govt.nz]
+* [HTTP/2] [1] [:path: /release/new-community-beds-opening-ahead-schedule-waikato]
+* [HTTP/2] [1] [user-agent: BeeLinePolicyMonitor/1.0 (+mailto:matthew.r.c.lee@outlook.com)]
+* [HTTP/2] [1] [accept: */*]
+> GET /release/new-community-beds-opening-ahead-schedule-waikato HTTP/2
+> Host: www.beehive.govt.nz
+> User-Agent: BeeLinePolicyMonitor/1.0 (+mailto:matthew.r.c.lee@outlook.com)
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/2 200 
+< content-type: text/html
+< cache-control: no-cache, no-store
+< content-length: 212
+< x-iinfo: 12-43345895-0 0NNN RT(1770087314845 15) q(0 -1 -1 4) r(0 -1) B10(4,314,0) U18
+< strict-transport-security: max-age=31536000; includeSubDomains; preload
+< set-cookie: visid_incap_227078=wAIf7O8zQUm5+qWHT7LD8ZJjgWkAAAAAQUIPAAAAAACZmGWZ0H9hrTeGwCgnrJxi; expires=Tue, 02 Feb 2027 15:38:11 GMT; HttpOnly; path=/; Domain=.beehive.govt.nz; Secure; SameSite=None
+< set-cookie: incap_ses_249_227078=UtqSM1pn7041LBqXPqB0A5JjgWkAAAAAyE/cHF6+sNGwl0FeSVKt0w==; path=/; Domain=.beehive.govt.nz; Secure; SameSite=None
+< 
+{ [212 bytes data]
+100   212  100   212    0     0   5435      0 --:--:-- --:--:-- --:--:--  5578
+* Connection #0 to host www.beehive.govt.nz left intact

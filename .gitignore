@@ -1,0 +1,27 @@
+ # Python virtual environments
+.venv/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+
+# Local databases
+*.db
+db/
+
+# Editor/IDE settings
+.vscode/
+.idea/
+.python-version
+
+# macOS noise
+.DS_Store
+
+# Node/Expo artifacts
+mobile-app/node_modules/
+mobile-app/.expo/
+mobile-app/.expo-shared/
+
+# Test caches
+.pytest_cache/
+tests/__pycache__/

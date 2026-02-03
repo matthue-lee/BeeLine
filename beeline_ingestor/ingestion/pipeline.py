@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from ..config import AppConfig
+from ..crosslink import CrossLinker
 from ..db import Database
 from ..models import DocumentStatus, IngestionRun
 from .cleaner import ContentCleaner
@@ -49,6 +50,7 @@ class IngestionPipeline:
         self.fetcher = ArticleFetcher(config.feeds)
         self.cleaner = ContentCleaner()
         self.repository = ReleaseRepository(self.database, config)
+        self.linker = CrossLinker(self.database, config)
 
     def run(self, since: Optional[datetime] = None) -> RunResult:
         """Execute the ingestion pipeline and return aggregated statistics."""
@@ -79,6 +81,8 @@ class IngestionPipeline:
 
             if document.status in {DocumentStatus.FAILED_FETCH, DocumentStatus.EMPTY_PARSE}:
                 failed += 1
+            else:
+                self.linker.link_release(document)
 
         total_items = len(seen_ids)
         logger.info(

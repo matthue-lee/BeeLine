@@ -5,7 +5,7 @@ import enum
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Column, DateTime, Enum, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime, Enum, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -62,3 +62,38 @@ class ReleaseDocument(Base):
         if not self.text_clean:
             return False
         return len(self.text_clean.strip()) >= min_length
+
+
+class NewsArticle(Base):
+    """External news article metadata for cross-source linking."""
+
+    __tablename__ = "news_articles"
+    __table_args__ = (
+        Index("idx_news_articles_source_published", "source", "published_at"),
+        Index("idx_news_articles_published", "published_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    text_clean: Mapped[Optional[str]] = mapped_column(Text)
+    word_count: Mapped[Optional[int]] = mapped_column(Integer)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ReleaseArticleLink(Base):
+    """Similarity edges between releases and news articles."""
+
+    __tablename__ = "release_article_links"
+    __table_args__ = (
+        Index("idx_release_article_similarity", "release_id", "similarity"),
+    )
+
+    release_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    article_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    similarity: Mapped[float] = mapped_column(Float, nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

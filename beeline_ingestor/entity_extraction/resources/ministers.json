@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Christopher Luxon",
+    "aliases": ["Chris Luxon", "Prime Minister Luxon", "PM Luxon"],
+    "titles": ["Prime Minister", "Minister for National Security"]
+  },
+  {
+    "name": "Nicola Willis",
+    "aliases": ["Minister Willis", "Finance Minister Willis"],
+    "titles": ["Minister of Finance"]
+  },
+  {
+    "name": "Winston Peters",
+    "aliases": ["Deputy Prime Minister Peters", "Foreign Minister Peters"],
+    "titles": ["Deputy Prime Minister", "Minister of Foreign Affairs"]
+  },
+  {
+    "name": "David Seymour",
+    "aliases": ["Associate Minister Seymour"],
+    "titles": ["Minister for Regulation"]
+  },
+  {
+    "name": "Shane Jones",
+    "aliases": ["Regional Development Minister Jones"],
+    "titles": ["Minister for Oceans and Fisheries"]
+  },
+  {
+    "name": "Judith Collins",
+    "aliases": ["Defence Minister Collins"],
+    "titles": ["Minister of Defence"]
+  },
+  {
+    "name": "Mark Mitchell",
+    "aliases": ["Police Minister Mitchell"],
+    "titles": ["Minister of Police"]
+  },
+  {
+    "name": "Erica Stanford",
+    "aliases": ["Education Minister Stanford"],
+    "titles": ["Minister of Education"]
+  },
+  {
+    "name": "Brooke van Velden",
+    "aliases": ["Associate Health Minister Van Velden"],
+    "titles": ["Associate Minister of Health"]
+  },
+  {
+    "name": "Willie Jackson",
+    "aliases": ["Minister Jackson"],
+    "titles": ["Minister for Māori Development"]
+  }
+]

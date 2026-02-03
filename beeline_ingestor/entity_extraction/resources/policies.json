@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Resource Management Act",
+    "aliases": ["RMA", "Resource Management Amendment Act"],
+    "patterns": ["Resource Management Act\\\\s+\\\\d{4}"]
+  },
+  {
+    "name": "Emissions Trading Scheme",
+    "aliases": ["ETS", "NZ ETS"],
+    "patterns": ["Emissions Trading Scheme", "ETS\\\\b"]
+  },
+  {
+    "name": "Climate Change Response Act",
+    "aliases": ["CCRA"],
+    "patterns": ["Climate Change Response Act\\\\s*\\\\d{4}"]
+  },
+  {
+    "name": "Three Waters Reform",
+    "aliases": ["Affordable Water Reforms"],
+    "patterns": ["Three Waters", "Affordable Water"]
+  },
+  {
+    "name": "National Policy Statement for Freshwater Management",
+    "aliases": ["NPS-FM"],
+    "patterns": ["National Policy Statement for Freshwater Management"]
+  }
+]

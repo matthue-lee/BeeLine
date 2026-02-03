@@ -1,0 +1,13 @@
+[
+  {"name": "Auckland", "aliases": ["Tāmaki Makaurau"]},
+  {"name": "Wellington", "aliases": ["Te Whanganui-a-Tara", "Wellington Region"]},
+  {"name": "Christchurch", "aliases": ["Ōtautahi"]},
+  {"name": "Dunedin", "aliases": ["Ōtepoti"]},
+  {"name": "Hamilton"},
+  {"name": "Tauranga"},
+  {"name": "Hawke's Bay", "aliases": ["Te Matau-a-Māui"]},
+  {"name": "Southland", "aliases": ["Murihiku"]},
+  {"name": "Waikato"},
+  {"name": "Canterbury"},
+  {"name": "Gisborne", "aliases": ["Tairāwhiti"]}
+]
