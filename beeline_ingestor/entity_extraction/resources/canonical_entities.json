@@ -1,0 +1,50 @@
+[
+  {
+    "canonical_name": "Christopher Luxon",
+    "entity_type": "PERSON",
+    "aliases": ["Chris Luxon", "Prime Minister Luxon", "PM Luxon"],
+    "metadata": {
+      "title": "Prime Minister",
+      "party": "National",
+      "portfolio": "National Security"
+    },
+    "tenure": {
+      "start": "2023-11-27"
+    }
+  },
+  {
+    "canonical_name": "Nicola Willis",
+    "entity_type": "PERSON",
+    "aliases": ["Finance Minister Willis"],
+    "metadata": {
+      "title": "Minister of Finance",
+      "party": "National"
+    }
+  },
+  {
+    "canonical_name": "Winston Peters",
+    "entity_type": "PERSON",
+    "aliases": ["Deputy Prime Minister Peters", "Foreign Minister Peters"],
+    "metadata": {
+      "title": "Deputy Prime Minister",
+      "portfolio": "Foreign Affairs",
+      "party": "New Zealand First"
+    }
+  },
+  {
+    "canonical_name": "Ministry of Health",
+    "entity_type": "MINISTRY",
+    "aliases": ["MoH", "Health Ministry", "Te Whatu Ora"],
+    "metadata": {
+      "type": "department"
+    }
+  },
+  {
+    "canonical_name": "Resource Management Act",
+    "entity_type": "POLICY",
+    "aliases": ["RMA", "Resource Management Act 1991"],
+    "metadata": {
+      "legislation": true
+    }
+  }
+]

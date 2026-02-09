@@ -32,6 +32,8 @@ class EntityExtractionConfig:
     min_confidence: float = 0.6
     max_workers: int = int(os.getenv("ENTITY_EXTRACTION_WORKERS", "2"))
     blocklist: Sequence[str] = field(default_factory=_default_blocklist)
+    canonical_fuzzy_threshold: float = float(os.getenv("CANONICAL_FUZZY_THRESHOLD", "0.85"))
+    canonical_max_candidates: int = int(os.getenv("CANONICAL_MAX_CANDIDATES", "200"))
     _blocklist_set: set[str] = field(init=False, repr=False)
     resources_dir: Path = field(
         default_factory=lambda: Path(__file__).resolve().parent / "resources"

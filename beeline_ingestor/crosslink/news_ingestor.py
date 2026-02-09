@@ -10,6 +10,8 @@ import feedparser
 import requests
 
 from ..config import AppConfig
+from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
+from ..entity_extraction.store import EntityStore
 from ..db import Database
 from ..utils import parse_datetime
 from .articles import ArticleInput, NewsArticleRepository
@@ -37,6 +39,19 @@ class NewsIngestor:
         self.repository = NewsArticleRepository(self.database)
         self.session = requests.Session()
         self.retention_days = config.crosslink.retention_days
+        self.canonicalizer = EntityCanonicalizer(config.entity_extraction) if config.enable_entity_extraction else None
+        self.entity_store = (
+            EntityStore(self.database, canonicalizer=self.canonicalizer)
+            if config.enable_entity_extraction
+            else None
+        )
+        self.entity_service: EntityExtractionService | None = None
+        if config.enable_entity_extraction:
+            try:
+                self.entity_service = EntityExtractionService(config.entity_extraction)
+            except RuntimeError:
+                logger.exception("Entity extraction disabled for news ingestion")
+                self.entity_service = None
 
     def run(self) -> NewsIngestResult:
         feeds = self.config.crosslink.feeds
@@ -59,11 +74,12 @@ class NewsIngestor:
                 article = self._build_article(entry, source_name)
                 if not article:
                     continue
-                _, was_inserted = self.repository.upsert(article)
+                record, was_inserted = self.repository.upsert(article)
                 if was_inserted:
                     inserted += 1
                 else:
                     updated += 1
+                self._run_entity_extraction(record)
 
         logger.info(
             "News ingest complete feeds=%s seen=%s inserted=%s updated=%s",
@@ -76,6 +92,17 @@ class NewsIngestor:
         if pruned:
             logger.info("Pruned %s stale news articles older than %s days", pruned, self.retention_days)
         return NewsIngestResult(total_feeds=len(feeds), articles_seen=seen, inserted=inserted, updated=updated)
+
+    def _run_entity_extraction(self, record) -> None:
+        if not self.entity_service or not self.entity_store:
+            return
+        text = (record.text_clean or record.summary or "").strip()
+        if not text:
+            return
+        result = self.entity_service.extract(text, record.id, "article")
+        if result.skipped or not result.entities:
+            return
+        self.entity_store.persist(record.id, "article", text, result.entities)
 
     def _build_article(self, entry: dict, source_name: str) -> ArticleInput | None:
         title = (entry.get("title") or "").strip()

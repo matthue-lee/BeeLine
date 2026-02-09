@@ -39,6 +39,12 @@ class NewsArticleRepository:
 
         with self.database.session() as session:
             existing = session.get(NewsArticle, article_id)
+            if existing is None:
+                existing = (
+                    session.execute(select(NewsArticle).where(NewsArticle.url == article_input.url)).scalar_one_or_none()
+                )
+                if existing:
+                    article_id = existing.id
             if existing:
                 existing.title = article_input.title
                 existing.url = article_input.url

@@ -4,12 +4,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Optional
 
 from ..config import AppConfig
 from ..crosslink import CrossLinker
 from ..db import Database
+from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
+from ..entity_extraction.store import EntityStore
 from ..models import DocumentStatus, IngestionRun
+from ..observability import record_ingestion_metrics
 from .cleaner import ContentCleaner
 from .fetcher import ArticleFetcher
 from .rss import FeedClient, FeedEntry
@@ -51,63 +55,118 @@ class IngestionPipeline:
         self.cleaner = ContentCleaner()
         self.repository = ReleaseRepository(self.database, config)
         self.linker = CrossLinker(self.database, config)
+        self.canonicalizer = EntityCanonicalizer(config.entity_extraction) if config.enable_entity_extraction else None
+        self.entity_store = (
+            EntityStore(self.database, canonicalizer=self.canonicalizer)
+            if config.enable_entity_extraction
+            else None
+        )
+        self.entity_service: EntityExtractionService | None = None
+        if config.enable_entity_extraction:
+            try:
+                self.entity_service = EntityExtractionService(config.entity_extraction)
+            except RuntimeError:
+                logger.exception("Entity extraction disabled due to initialisation failure")
+                self.entity_service = None
 
-    def run(self, since: Optional[datetime] = None) -> RunResult:
+    def run(self, since: Optional[datetime] = None, source: str = "rss") -> RunResult:
         """Execute the ingestion pipeline and return aggregated statistics."""
 
+        start = perf_counter()
         logger.info("Starting ingestion run")
-        run_record = self._create_run_record()
+        run_record = self._create_run_record(source)
 
         entries = self.feed_client.fetch(since)
         seen_ids: set[str] = set()
         inserted = updated = skipped = failed = 0
+        release_total: int | None = None
+        run_status = "completed"
 
-        for entry in entries:
-            if entry.id in seen_ids:
-                skipped += 1
-                continue
-            seen_ids.add(entry.id)
+        try:
+            for entry in entries:
+                if entry.id in seen_ids:
+                    skipped += 1
+                    continue
+                seen_ids.add(entry.id)
 
-            fetch_result = self.fetcher.fetch(entry.url) if self.config.enable_article_fetch else None
-            raw_payload = fetch_result.content if fetch_result and fetch_result.content else entry.summary
-            cleaned = self.cleaner.clean(raw_payload)
+                fetch_result = self.fetcher.fetch(entry.url) if self.config.enable_article_fetch else None
+                raw_payload = fetch_result.content if fetch_result and fetch_result.content else entry.summary
+                cleaned = self.cleaner.clean(raw_payload)
 
-            document, was_inserted = self.repository.upsert(entry, fetch_result, cleaned)
+                document, was_inserted = self.repository.upsert(entry, fetch_result, cleaned)
 
-            if was_inserted:
-                inserted += 1
-            else:
-                updated += 1
+                if was_inserted:
+                    inserted += 1
+                else:
+                    updated += 1
 
-            if document.status in {DocumentStatus.FAILED_FETCH, DocumentStatus.EMPTY_PARSE}:
-                failed += 1
-            else:
-                self.linker.link_release(document)
+                if document.status in {DocumentStatus.FAILED_FETCH, DocumentStatus.EMPTY_PARSE}:
+                    failed += 1
+                else:
+                    self.linker.link_release(document)
+                    self._run_entity_extraction(document)
 
-        total_items = len(seen_ids)
-        logger.info(
-            "Ingestion run complete -- total=%s inserted=%s updated=%s skipped=%s failed=%s",
-            total_items,
-            inserted,
-            updated,
-            skipped,
-            failed,
-        )
+            total_items = len(seen_ids)
+            logger.info(
+                "Ingestion run complete -- total=%s inserted=%s updated=%s skipped=%s failed=%s",
+                total_items,
+                inserted,
+                updated,
+                skipped,
+                failed,
+            )
 
-        self._finalise_run_record(run_record, total_items, inserted, updated, skipped, failed)
-        return RunResult(
-            run_id=run_record.id,
-            total_items=total_items,
-            inserted=inserted,
-            updated=updated,
-            skipped=skipped,
-            failed=failed,
-        )
+            try:
+                release_total = self.repository.count_documents()
+            except Exception:  # pragma: no cover - defensive metric path
+                logger.exception("Unable to compute release count after run")
+                release_total = None
 
-    def _create_run_record(self) -> IngestionRun:
+            self._finalise_run_record(
+                run_record, total_items, inserted, updated, skipped, failed, status="completed"
+            )
+            return RunResult(
+                run_id=run_record.id,
+                total_items=total_items,
+                inserted=inserted,
+                updated=updated,
+                skipped=skipped,
+                failed=failed,
+            )
+        except Exception:
+            run_status = "failed"
+            self._finalise_run_record(
+                run_record,
+                len(seen_ids),
+                inserted,
+                updated,
+                skipped,
+                failed,
+                status="failed",
+            )
+            raise
+        finally:
+            duration = perf_counter() - start
+            if release_total is None:
+                try:
+                    release_total = self.repository.count_documents()
+                except Exception:  # pragma: no cover - defensive metric path
+                    logger.exception("Unable to compute release count for metrics")
+                    release_total = None
+            record_ingestion_metrics(
+                run_status,
+                inserted=inserted,
+                updated=updated,
+                skipped=skipped,
+                failed=failed,
+                duration_seconds=duration,
+                release_total=release_total,
+            )
+
+    def _create_run_record(self, source: str) -> IngestionRun:
         """Persist a new `IngestionRun` row and return it."""
 
-        run = IngestionRun()
+        run = IngestionRun(source=source, status="running")
         with self.database.session() as session:
             session.add(run)
             session.flush()
@@ -122,6 +181,7 @@ class IngestionPipeline:
         updated: int,
         skipped: int,
         failed: int,
+        status: str,
     ) -> None:
         """Update the existing run record with final metrics."""
 
@@ -139,5 +199,18 @@ class IngestionPipeline:
             db_run.details = {
                 "min_content_length": self.config.min_content_length,
                 "enable_article_fetch": self.config.enable_article_fetch,
+                "enable_entity_extraction": self.config.enable_entity_extraction,
             }
+            db_run.status = status
             session.add(db_run)
+
+    def _run_entity_extraction(self, document) -> None:
+        if not self.entity_service or not self.entity_store:
+            return
+        text = (document.text_clean or document.text_raw or "").strip()
+        if not text:
+            return
+        result = self.entity_service.extract(text, document.id, "release")
+        if result.skipped or not result.entities:
+            return
+        self.entity_store.persist(document.id, "release", text, result.entities)

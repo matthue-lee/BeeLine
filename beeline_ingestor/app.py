@@ -5,12 +5,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from sqlalchemy import select
 
 from .config import AppConfig
 from .ingestion import IngestionPipeline
 from .models import NewsArticle, ReleaseArticleLink, ReleaseDocument
+from .observability import init_sentry, render_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,26 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
     app_config = config or AppConfig.from_env()
     app.config["APP_CONFIG"] = app_config
     app.pipeline = IngestionPipeline(app_config)  # type: ignore[attr-defined]
+    init_sentry(
+        app_config.sentry_dsn,
+        environment=app_config.sentry_environment,
+        traces_sample_rate=app_config.sentry_traces_sample_rate,
+        profiles_sample_rate=app_config.sentry_profiles_sample_rate,
+        enable_flask_integration=True,
+    )
 
     @app.route("/health", methods=["GET"])
     def health() -> Any:
         """Return a simple health check response."""
 
         return {"status": "ok"}
+
+    @app.route("/metrics", methods=["GET"])
+    def metrics() -> Response:
+        """Expose Prometheus metrics collected within the app."""
+
+        payload, content_type = render_metrics()
+        return Response(payload, mimetype=content_type)
 
     @app.route("/ingest/run", methods=["POST"])
     def run_ingestion() -> Any:

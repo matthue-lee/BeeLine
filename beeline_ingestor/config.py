@@ -4,7 +4,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Iterable, List
+from pathlib import Path
+from typing import Iterable, List, Optional
+
+from sqlalchemy.engine import make_url
+
+from .entity_extraction.config import EntityExtractionConfig
 
 
 DEFAULT_FEED = "https://www.beehive.govt.nz/releases/feed"
@@ -29,8 +34,18 @@ class FeedConfig:
 class DatabaseConfig:
     """Database connection settings."""
 
-    uri: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///beeline.db"))
+    uri: str = field(default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///db/beeline.db"))
     echo: bool = field(default_factory=lambda: bool(int(os.getenv("SQLALCHEMY_ECHO", "0"))))
+
+    def ensure_path(self) -> None:
+        url = make_url(self.uri)
+        if url.get_backend_name() != "sqlite":
+            return
+        db_path = url.database or ""
+        if not db_path or db_path == ":memory:":
+            return
+        path = Path(db_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass(slots=True)
@@ -52,6 +67,12 @@ class AppConfig:
     min_content_length: int = int(os.getenv("MIN_CONTENT_LENGTH", "200"))
     enable_article_fetch: bool = bool(int(os.getenv("ENABLE_ARTICLE_FETCH", "1")))
     crosslink: CrossLinkConfig = field(default_factory=CrossLinkConfig)
+    enable_entity_extraction: bool = bool(int(os.getenv("ENABLE_ENTITY_EXTRACTION", "1")))
+    entity_extraction: EntityExtractionConfig = field(default_factory=EntityExtractionConfig)
+    sentry_dsn: Optional[str] = None
+    sentry_environment: str = "development"
+    sentry_traces_sample_rate: float = 0.0
+    sentry_profiles_sample_rate: float = 0.0
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -87,12 +108,21 @@ class AppConfig:
         if retention:
             crosslink.retention_days = int(retention)
 
+        database = DatabaseConfig()
+        database.ensure_path()
+
         return cls(
             feeds=feeds,
-            database=DatabaseConfig(),
+            database=database,
             min_content_length=int(os.getenv("MIN_CONTENT_LENGTH", "200")),
             enable_article_fetch=bool(int(os.getenv("ENABLE_ARTICLE_FETCH", "1"))),
             crosslink=crosslink,
+            enable_entity_extraction=bool(int(os.getenv("ENABLE_ENTITY_EXTRACTION", "1"))),
+            entity_extraction=EntityExtractionConfig(),
+            sentry_dsn=os.getenv("SENTRY_DSN"),
+            sentry_environment=os.getenv("SENTRY_ENVIRONMENT", os.getenv("FLASK_ENV", "development")),
+            sentry_traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            sentry_profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
         )
 
 

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..config import AppConfig
 from ..db import Database
@@ -115,3 +115,9 @@ class ReleaseRepository:
             if fetch.error:
                 provenance["article_error"] = fetch.error
         return provenance
+
+    def count_documents(self) -> int:
+        """Return the total number of release documents currently stored."""
+
+        with self.db.session() as session:
+            return session.execute(select(func.count(ReleaseDocument.id))).scalar_one()

@@ -13,6 +13,7 @@ db/
 .vscode/
 .idea/
 .python-version
+.env.docker
 
 # macOS noise
 .DS_Store
