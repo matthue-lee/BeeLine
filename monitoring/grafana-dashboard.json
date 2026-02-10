@@ -1,0 +1,45 @@
+{
+  "title": "BeeLine System Overview",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Queue Job Throughput",
+      "targets": [
+        {
+          "expr": "sum(rate(queue_job_results_total{status='completed'}[5m])) by (queue)",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Queue Failures",
+      "targets": [
+        {
+          "expr": "sum(rate(queue_job_results_total{status='failed'}[5m])) by (queue)",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Queue Depth",
+      "targets": [
+        {
+          "expr": "queue_depth_total",
+          "legendFormat": "{{queue}} {{state}}"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Cost Aggregates",
+      "targets": [
+        {
+          "expr": "sum_over_time(cost_hourly_usd{operation='summarize'}[24h])",
+          "legendFormat": "summarize"
+        }
+      ]
+    }
+  ]
+}

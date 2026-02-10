@@ -1,0 +1,19 @@
+groups:
+  - name: queue-alerts
+    rules:
+      - alert: QueueBacklogHigh
+        expr: sum(queue_depth_total{state='waiting'}) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue backlog high"
+          description: "Waiting jobs exceeded 100 for more than 5 minutes."
+      - alert: JobFailureRateHigh
+        expr: sum(rate(queue_job_results_total{status='failed'}[10m])) / sum(rate(queue_job_results_total[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Job failure rate >5%"
+          description: "Investigate worker logs and DLQ."

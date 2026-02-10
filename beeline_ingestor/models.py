@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Boolean,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -289,6 +290,25 @@ class DailyCost(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class PromptTemplate(Base):
+    """Prompt templates used for summarization/verification."""
+
+    __tablename__ = "prompt_templates"
+    __table_args__ = (
+        Index("uq_prompt_template_name_version", "name", "version", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[Optional[dict]] = mapped_column("metadata", JSON, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    traffic_allocation: Mapped[int] = mapped_column(Integer, default=100)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class ContentFlag(Base):

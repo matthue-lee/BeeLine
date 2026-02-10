@@ -53,7 +53,7 @@ class ReleaseRepository:
                 status=self._derive_status(fetch, cleaned),
                 word_count=cleaned.word_count,
                 fetched_at=fetch.fetched_at if fetch else datetime.now(timezone.utc),
-                provenance=self._build_provenance(entry, fetch),
+                provenance=self._build_provenance(entry, fetch, cleaned),
             )
             session.add(document)
             return document, True
@@ -74,11 +74,16 @@ class ReleaseRepository:
                 document.text_raw = fetch.content
 
         # Only upgrade cleaned text when it is better than the existing version.
-        if cleaned.text and (not document.text_clean or len(cleaned.text) > len(document.text_clean)):
+        if cleaned.text and (not document.text_clean or cleaned.word_count > (document.word_count or 0)):
             document.text_clean = cleaned.text
             document.word_count = cleaned.word_count
+            if cleaned.excerpt:
+                document.provenance["cleaner_excerpt"] = cleaned.excerpt
+            if cleaned.removed_sections:
+                document.provenance["cleaner_removed_sections"] = cleaned.removed_sections
 
         document.status = self._derive_status(fetch, cleaned)
+        document.provenance = self._build_provenance(entry, fetch, cleaned, existing=document.provenance)
 
     def _derive_status(self, fetch: FetchResult | None, cleaned: CleanResult) -> DocumentStatus:
         """Determine document status based on fetch and cleaning results."""
@@ -97,23 +102,44 @@ class ReleaseRepository:
             return DocumentStatus.PARTIAL
         return DocumentStatus.FAILED_FETCH
 
-    def _build_provenance(self, entry: FeedEntry, fetch: FetchResult | None) -> dict:
+    def _build_provenance(
+        self,
+        entry: FeedEntry,
+        fetch: FetchResult | None,
+        cleaned: CleanResult,
+        *,
+        existing: Optional[dict] = None,
+    ) -> dict:
         """Assemble provenance metadata for downstream auditing."""
 
-        provenance = {
-            "feed_url": entry.feed_url,
-            "fetched_from_feed": datetime.now(timezone.utc).isoformat(),
-        }
+        provenance = existing.copy() if existing else {}
+        provenance.update(
+            {
+                "feed_url": entry.feed_url,
+                "fetched_from_feed": datetime.now(timezone.utc).isoformat(),
+                "feed_categories": entry.categories,
+                "clean_word_count": cleaned.word_count,
+            }
+        )
+        if cleaned.excerpt:
+            provenance["cleaner_excerpt"] = cleaned.excerpt
+        if cleaned.removed_sections:
+            provenance["cleaner_removed_sections"] = cleaned.removed_sections
         if fetch:
             provenance.update(
                 {
                     "article_status": fetch.status_code,
                     "final_url": fetch.final_url,
                     "article_fetched_at": fetch.fetched_at.isoformat(),
+                    "article_attempts": fetch.attempts,
                 }
             )
             if fetch.error:
                 provenance["article_error"] = fetch.error
+            if fetch.content_length is not None:
+                provenance["article_content_length"] = fetch.content_length
+            if fetch.incapsula_detected:
+                provenance["incapsula_detected"] = True
         return provenance
 
     def count_documents(self) -> int:

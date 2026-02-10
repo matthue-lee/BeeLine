@@ -45,3 +45,34 @@ python scripts/monitoring_smoke_test.py --metrics-url http://localhost:58000/met
 
 The script checks for key metric names so CI or local smoke tests can fail fast
 if instrumentation regresses.
+
+### RSS Fetch Metrics
+
+Week 2 adds counters and histograms for the RSS client so you can monitor
+upstream stability:
+
+- `beeline_rss_requests_total{feed="…", status="200"}` – increments per
+  request grouped by HTTP status (`robots`/`error` when no HTTP code exists).
+- `beeline_rss_request_seconds{feed="…"}` – latency histogram for each feed.
+
+The metrics are emitted automatically by `FeedClient` and appear on
+`/metrics`. Use them to detect throttling (spikes in 429) or slow feeds.
+
+### Cost Tracking
+
+- Use `scripts/mock_cost_event.py` to emit a synthetic LLM call and verify
+  `llm_calls`/`daily_costs` entries plus the `/costs` API:
+
+```bash
+./scripts/mock_cost_event.py --model gpt-4o-mini --operation summarize
+curl http://localhost:58000/costs?hours=24
+```
+
+- Redis (if configured) tracks hourly/daily spend under keys like
+  `cost:hour:summarize:YYYYMMDDHH`; these drive the circuit-breaker logic slated
+  for Day 2.
+
+### Dashboards & Alerts
+- See `monitoring/` for sample Prometheus scrape configs, Grafana dashboard JSON, and alert rules
+  (queue backlog, job failure rate). Import the dashboard and configure Alertmanager routes for
+  Slack/email as described.

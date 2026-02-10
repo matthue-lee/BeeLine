@@ -54,6 +54,21 @@ LAST_SUCCESS_GAUGE = Gauge(
     registry=REGISTRY,
 )
 
+RSS_REQUESTS = Counter(
+    "beeline_rss_requests_total",
+    "HTTP requests made to RSS feeds partitioned by status code.",
+    ("feed", "status"),
+    registry=REGISTRY,
+)
+
+RSS_REQUEST_DURATION = Histogram(
+    "beeline_rss_request_seconds",
+    "Latency for RSS HTTP fetch operations.",
+    ("feed",),
+    buckets=(0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+    registry=REGISTRY,
+)
+
 _sentry_initialised = False
 
 
@@ -113,6 +128,13 @@ def record_ingestion_metrics(
 
     if status == "completed":
         LAST_SUCCESS_GAUGE.set(time.time())
+
+
+def record_rss_fetch_metrics(feed_url: str, status: str, *, duration_seconds: float) -> None:
+    """Record Prometheus metrics for RSS HTTP requests."""
+
+    RSS_REQUESTS.labels(feed=feed_url, status=status).inc()
+    RSS_REQUEST_DURATION.labels(feed=feed_url).observe(max(duration_seconds, 0.0))
 
 
 def render_metrics() -> tuple[bytes, str]:

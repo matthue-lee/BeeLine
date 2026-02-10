@@ -14,6 +14,7 @@ from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
 from ..entity_extraction.store import EntityStore
 from ..models import DocumentStatus, IngestionRun
 from ..observability import record_ingestion_metrics
+from ..summarization.service import SummaryService
 from .cleaner import ContentCleaner
 from .fetcher import ArticleFetcher
 from .rss import FeedClient, FeedEntry
@@ -68,15 +69,29 @@ class IngestionPipeline:
             except RuntimeError:
                 logger.exception("Entity extraction disabled due to initialisation failure")
                 self.entity_service = None
+        try:
+            self.summary_service = SummaryService(config, self.database)
+        except Exception:
+            logger.exception("Summary service initialisation failed")
+            self.summary_service = None
 
-    def run(self, since: Optional[datetime] = None, source: str = "rss") -> RunResult:
+    def run(
+        self,
+        *,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        limit: Optional[int] = None,
+        source: str = "rss",
+    ) -> RunResult:
         """Execute the ingestion pipeline and return aggregated statistics."""
 
         start = perf_counter()
         logger.info("Starting ingestion run")
         run_record = self._create_run_record(source)
 
-        entries = self.feed_client.fetch(since)
+        entries = self.feed_client.fetch(since, until)
+        if limit is not None:
+            entries = entries[: max(limit, 0)]
         seen_ids: set[str] = set()
         inserted = updated = skipped = failed = 0
         release_total: int | None = None
@@ -105,6 +120,7 @@ class IngestionPipeline:
                 else:
                     self.linker.link_release(document)
                     self._run_entity_extraction(document)
+                    self._maybe_generate_summary(document)
 
             total_items = len(seen_ids)
             logger.info(
@@ -214,3 +230,13 @@ class IngestionPipeline:
         if result.skipped or not result.entities:
             return
         self.entity_store.persist(document.id, "release", text, result.entities)
+
+    def _maybe_generate_summary(self, document) -> None:
+        if not self.summary_service:
+            return
+        try:
+            self.summary_service.generate_if_needed(document)
+        except RuntimeError:
+            logger.warning("No active prompt templates found; skipping summary")
+        except Exception:
+            logger.exception("Failed to generate summary for %s", document.id)

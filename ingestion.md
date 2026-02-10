@@ -25,7 +25,7 @@ Does:\
     -  Enqueue or mark items for the next pipeline stages.
 
 Does not:\
-    -  Generate summaries, embeddings, or comparisons (those are downstream).\
+    -  Generate summaries, embeddings, or comparisons (those are downstream workers triggered by the queue system).\
     -  Rewrite content to fit a narrative; it preserves source fidelity.\
     -  Scrape outside what the RSS item links to.
 
@@ -67,11 +67,14 @@ A scheduler (cron, Actions, etc.) triggers the ingestion run at a fixed cadence 
     4\. Article Retrieval (if needed)\
     -  If RSS does not contain the full text, fetch the linked page.\
     -  Respect timeouts and retry policy; follow redirects; capture final URL.\
+    -  Detect anti-bot challenges; log and skip the offending feed URL rather than attempting to bypass protections.\
+    -  Record provenance per attempt (status codes, latency, retries, content length) for cost/perf tuning.\
     5\. Content Extraction & Normalization\
-    -  Strip scripts/styles and obvious boilerplate.\
-    -  Prefer <article> or a main content container when present.\
+    -  Strip scripts/styles and obvious boilerplate (share widgets, breadcrumbs, printed view links).\
+    -  Prefer <article> or a main content container when present and fall back to high-text-density nodes.\
     -  Normalize whitespace and punctuation; collapse repeated line breaks.\
     -  Keep a conservative approach --- rather miss some fluff than nuke real content.\
+    -  Drop standard Beehive footers ("Media Contact", "Released by", etc.) so cleaned text is ready for summarization.\
     -  Record quick stats (word count, language guess if trivial).\
     6\. Metadata Mapping\
     -  Derive minister and portfolio if present in tags/categories (or leave null).\
@@ -140,7 +143,7 @@ Dependencies (conceptual, not implementation)\
 
 Interfaces to downstream stages\
     -  Embeddings: document/chunk text available; status = ready.\
-    -  Summarization: cleaned text + metadata ready; provenance links available for citation.\
+    -  Summarization: cleaned text + metadata ready; prompt templates select instructions and summaries are stored in `summaries` with prompt/model metadata.\
     -  Cross-source search: title/clean text stored for indexing.\
     -  Digest/UI: normalized fields (title, date, minister, portfolio) available for filtering and display.
 
@@ -166,3 +169,11 @@ Cross-source linking overview
 -  After each release is ingested, a lightweight cosine-similarity pass compares the release text against the latest external articles. The top matches (default 3) are stored in `release_article_links` with a similarity score and short rationale.
 -  The `/releases` API now includes a `links` array per release (source, title, similarity, URL) so downstream apps can surface corroborating coverage.
 -  Tune feeds or limits via `CROSSLINK_FEEDS`, `CROSSLINK_MAX_ARTICLES`, and `CROSSLINK_LINK_LIMIT` env vars. Articles older than `CROSSLINK_RETENTION_DAYS` (default 60) are pruned automatically to bound storage.
+
+Backfill & inspection utilities
+--------------------------------
+
+-  `python -m beeline_ingestor --since <iso> [--until ... --limit ... --source rss]` runs one-off jobs; provide a `--source` label (`rss`, `manual`, `synthetic`) for provenance.
+-  `python -m beeline_ingestor backfill --start 2023-01-01T00:00:00+12:00 --end 2023-12-31T23:59:59+12:00 --window-days 14 --sleep-seconds 5` processes history in windows so feeds are not spammed.
+-  `scripts/backfill_releases.py --start ... --window-days 30` wraps the subcommand with monthly defaults; ideal for pre-production backfills.
+-  The `/releases` inspection API accepts `minister`, `portfolio`, `status`, `date_from`, `date_to`, `limit`, and `offset` parameters for QA. Combine with `links` data to confirm cross-source wiring.

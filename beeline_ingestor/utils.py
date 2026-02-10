@@ -11,10 +11,15 @@ from dateutil import parser as date_parser
 logger = logging.getLogger(__name__)
 
 
-def compute_canonical_id(title: str, url: str) -> str:
-    """Compute a stable ID using sha256 over normalized title and URL."""
+def compute_canonical_id(title: str, url: str, published_at: Optional[datetime] = None) -> str:
+    """Compute a stable ID using sha256 over normalized URL and a stable secondary field."""
 
-    normalized = f"{title.strip().lower()}::{url.strip().lower()}".encode("utf-8")
+    url_part = url.strip().lower()
+    if published_at:
+        published_part = published_at.astimezone(timezone.utc).isoformat()
+    else:
+        published_part = title.strip().lower()
+    normalized = f"{url_part}::{published_part}".encode("utf-8")
     return hashlib.sha256(normalized).hexdigest()
 
 

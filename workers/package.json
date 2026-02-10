@@ -1,0 +1,30 @@
+{
+  "name": "beeline-workers",
+  "version": "0.1.0",
+  "description": "BullMQ worker processes for BeeLine backend",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "ts-node --project tsconfig.json src/index.ts",
+    "enqueue-demo": "ts-node --project tsconfig.json src/tools/enqueueDemo.ts",
+    "replay-failed": "ts-node --project tsconfig.json src/tools/replayFailed.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.7.8",
+    "dotenv": "^16.4.7",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "pg": "^8.11.3",
+    "pino": "^9.5.0",
+    "prom-client": "^15.1.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.12",
+    "@types/pg": "^8.16.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

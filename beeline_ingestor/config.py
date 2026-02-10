@@ -10,6 +10,7 @@ from typing import Iterable, List, Optional
 from sqlalchemy.engine import make_url
 
 from .entity_extraction.config import EntityExtractionConfig
+from .circuit_breaker import BudgetLimits
 
 
 DEFAULT_FEED = "https://www.beehive.govt.nz/releases/feed"
@@ -28,6 +29,12 @@ class FeedConfig:
     urls: List[str] = field(default_factory=lambda: [DEFAULT_FEED])
     user_agent: str = "BeeLineReleaseMonitor/1.0 (+mailto:matthew.r.c.lee@outlook.com)"
     request_timeout: timedelta = timedelta(seconds=30)
+    max_attempts: int = 3
+    per_feed_cooldown: timedelta = timedelta(seconds=5)
+    retry_backoff_initial: timedelta = timedelta(seconds=10)
+    retry_backoff_max: timedelta = timedelta(minutes=5)
+    respect_robots: bool = True
+    robots_cache_ttl: timedelta = timedelta(hours=6)
 
 
 @dataclass(slots=True)
@@ -73,6 +80,7 @@ class AppConfig:
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = 0.0
     sentry_profiles_sample_rate: float = 0.0
+    cost_limits: BudgetLimits = field(default_factory=lambda: BudgetLimits(50.0, 600.0, 12000.0))
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -90,6 +98,30 @@ class AppConfig:
         timeout = os.getenv("HTTP_TIMEOUT_SECONDS")
         if timeout:
             feeds.request_timeout = timedelta(seconds=int(timeout))
+
+        max_attempts = os.getenv("RSS_MAX_ATTEMPTS")
+        if max_attempts:
+            feeds.max_attempts = max(1, int(max_attempts))
+
+        cooldown = os.getenv("RSS_COOLDOWN_SECONDS")
+        if cooldown:
+            feeds.per_feed_cooldown = timedelta(seconds=max(0, int(cooldown)))
+
+        backoff_initial = os.getenv("RSS_BACKOFF_INITIAL_SECONDS")
+        if backoff_initial:
+            feeds.retry_backoff_initial = timedelta(seconds=max(1, int(backoff_initial)))
+
+        backoff_max = os.getenv("RSS_BACKOFF_MAX_SECONDS")
+        if backoff_max:
+            feeds.retry_backoff_max = timedelta(seconds=max(1, int(backoff_max)))
+
+        respect_robots = os.getenv("RSS_RESPECT_ROBOTS")
+        if respect_robots is not None:
+            feeds.respect_robots = bool(int(respect_robots))
+
+        robots_cache = os.getenv("RSS_ROBOTS_CACHE_SECONDS")
+        if robots_cache:
+            feeds.robots_cache_ttl = timedelta(seconds=max(60, int(robots_cache)))
 
         crosslink = CrossLinkConfig()
         news_feeds = os.getenv("CROSSLINK_FEEDS")
@@ -111,6 +143,12 @@ class AppConfig:
         database = DatabaseConfig()
         database.ensure_path()
 
+        breaker_limits = BudgetLimits(
+            hourly_usd=float(os.getenv("CIRCUIT_BREAKER_HOURLY_USD", "50")),
+            daily_usd=float(os.getenv("CIRCUIT_BREAKER_DAILY_USD", "600")),
+            monthly_usd=float(os.getenv("CIRCUIT_BREAKER_MONTHLY_USD", "12000")),
+        )
+
         return cls(
             feeds=feeds,
             database=database,
@@ -123,6 +161,7 @@ class AppConfig:
             sentry_environment=os.getenv("SENTRY_ENVIRONMENT", os.getenv("FLASK_ENV", "development")),
             sentry_traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
             sentry_profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
+            cost_limits=breaker_limits,
         )
 
 

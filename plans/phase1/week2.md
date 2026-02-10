@@ -14,7 +14,7 @@
 4. Instrument fetch durations and HTTP status counts for monitoring.
 
 ### 2. HTML Retrieval & Parsing
-1. Build `ArticleFetcher` that follows redirects, captures Incapsula challenges (re-use `scripts/capture_incapsula_debug.sh`).
+1. Build `ArticleFetcher` that follows redirects and detects anti-bot challenges so feeds can be skipped without attempting bypasses.
 2. Integrate Readability/BeautifulSoup cleaning to strip navigation cruft and inline styles.
 3. Capture provenance metadata (final URL, status, content length) for each fetch attempt.
 

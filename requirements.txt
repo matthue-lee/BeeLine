@@ -9,3 +9,4 @@ alembic==1.13.1
 psycopg[binary]==3.1.18
 prometheus-client==0.20.0
 sentry-sdk[flask]==1.45.0
+redis==5.0.1

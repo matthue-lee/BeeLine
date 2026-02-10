@@ -15,6 +15,10 @@ db/
 .python-version
 .env.docker
 
+# Worker build artifacts
+workers/node_modules/
+workers/dist/
+
 # macOS noise
 .DS_Store
 

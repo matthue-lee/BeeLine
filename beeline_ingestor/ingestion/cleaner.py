@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -19,10 +19,30 @@ class CleanResult:
 
     text: Optional[str]
     word_count: int
+    excerpt: Optional[str] = None
+    removed_sections: list[str] = field(default_factory=list)
 
 
 class ContentCleaner:
     """Convert raw HTML into normalized plain text."""
+
+    def __init__(self) -> None:
+        self.removal_selectors = [
+            "div.share",
+            "div.sharing",
+            "div.social-links",
+            "div.tags",
+            "ul.breadcrumb",
+            "div.print-links",
+            "div.block-share",
+            "div.field--name-field-related-releases",
+            "section.related-content",
+        ]
+        self.footer_patterns = [
+            re.compile(r"Released by .+", re.IGNORECASE),
+            re.compile(r"Media Contact", re.IGNORECASE),
+            re.compile(r"ENDS$", re.IGNORECASE),
+        ]
 
     def clean(self, html: Optional[str]) -> CleanResult:
         """Return cleaned content and word count from HTML input."""
@@ -39,10 +59,31 @@ class ContentCleaner:
             candidates = soup.select("div.field--name-body, div.content, main, section")
             article_node = max(candidates, key=lambda c: len(c.get_text(" ").strip()), default=soup)
 
+        removed_sections: list[str] = []
+        for selector in self.removal_selectors:
+            for node in article_node.select(selector):
+                removed_sections.append(selector)
+                node.decompose()
+
+        # Remove inline styles that often contain navigation text.
+        for attr in ("style", "class", "id"):
+            for tag in article_node.find_all(attrs={attr: True}):
+                if attr == "style":
+                    del tag[attr]
+
         text = article_node.get_text("\n", strip=True)
-        text = _normalise_whitespace(text)
+        text = self._strip_footer(_normalise_whitespace(text))
         word_count = len(text.split()) if text else 0
-        return CleanResult(text=text if text else None, word_count=word_count)
+        excerpt = None
+        if text:
+            excerpt = text.split(PARAGRAPH_SEP)[0][:400]
+        return CleanResult(text=text if text else None, word_count=word_count, excerpt=excerpt, removed_sections=removed_sections)
+
+    def _strip_footer(self, value: str) -> str:
+        lines = [line.strip() for line in value.splitlines() if line.strip()]
+        while lines and any(pattern.search(lines[-1]) for pattern in self.footer_patterns):
+            lines.pop()
+        return PARAGRAPH_SEP.join(lines)
 
 
 def _normalise_whitespace(value: str) -> str:
