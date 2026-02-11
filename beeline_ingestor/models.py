@@ -343,4 +343,5 @@ class Summary(Base):
     verification_score: Mapped[Optional[float]] = mapped_column(Float)
     tokens_used: Mapped[Optional[int]] = mapped_column(Integer)
     cost_usd: Mapped[Optional[float]] = mapped_column(Float)
+    raw_response: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

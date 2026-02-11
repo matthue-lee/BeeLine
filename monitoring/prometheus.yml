@@ -14,4 +14,4 @@ remote_write:
   - url: "https://prometheus-blocks-prod-us-central1.grafana.net/api/prom/push/eyJrIjoiODg5YjE3ZDEwYjQyN2M4Zjk0ODg0YjA4YjE3ZDEzODkiLCJuIjoiYmVlbGluZS1iZWVsaW5lc3QtZGV2IiwiaWQiOjQ1MTA4NTM4MTI5MTIyMDg4fQ=="
     basic_auth:
       username: "beeline-dev"
-      password: "${GRAFANA_CLOUD_TOKEN}"
+      password: "${GCLOUD_RW_API_KEY}"

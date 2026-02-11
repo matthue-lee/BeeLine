@@ -13,6 +13,7 @@ from beeline_ingestor.summarization.service import SummaryService
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate summaries for releases")
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--release-id", help="Target a specific release ID")
     return parser.parse_args()
 
 
@@ -24,12 +25,12 @@ def main() -> None:
     service = SummaryService(config, db)
     processed = 0
     with db.session() as session:
-        releases = (
-            session.query(ReleaseDocument)
-            .order_by(ReleaseDocument.published_at.desc().nullslast())
-            .limit(args.limit)
-            .all()
-        )
+        query = session.query(ReleaseDocument).order_by(ReleaseDocument.published_at.desc().nullslast())
+        if args.release_id:
+            query = query.filter(ReleaseDocument.id == args.release_id)
+        else:
+            query = query.limit(args.limit)
+        releases = query.all()
     for release in releases:
         result = service.generate_if_needed(release)
         if result:

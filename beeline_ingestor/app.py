@@ -274,4 +274,6 @@ def _serialize_summary(summary: Summary | None) -> Any:
         "prompt_version": summary.prompt_version,
         "verification_score": summary.verification_score,
         "cost_usd": summary.cost_usd,
+        "tokens_used": summary.tokens_used,
+        "raw_response": summary.raw_response,
     }
