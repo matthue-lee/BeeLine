@@ -26,7 +26,10 @@ workers/dist/
 .pytest_cache/
 tests/__pycache__/
 
-plans/
-docs/
+./plans
+./docs
+/plans
+/docs
+
 alloy/config.env
 *agents.md

@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     Boolean,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -129,6 +130,24 @@ class ReleaseArticleLink(Base):
     link_type: Mapped[Optional[str]] = mapped_column(String(32))
     stance: Mapped[Optional[str]] = mapped_column(String(16))
     stance_confidence: Mapped[Optional[float]] = mapped_column(Float)
+
+
+class DocumentEmbedding(Base):
+    """Vector embeddings for releases, summaries, or news articles."""
+
+    __tablename__ = "document_embeddings"
+    __table_args__ = (
+        Index("idx_document_embeddings_doc_type", "doc_type", "document_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    doc_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    document_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    text_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class Entity(Base):

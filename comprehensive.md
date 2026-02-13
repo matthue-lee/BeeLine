@@ -51,6 +51,13 @@
 - Control knobs live in `.env` (enable/disable, intervals, initial delays, metrics port). Each run is recorded in `job_runs`, and Prometheus exports `beeline_scheduler_*` plus the news ingestion counters/gauges so Grafana panels and alerts can watch for drift or failures.
 - Manual one-offs still work via `docker compose run --rm ingestion-worker python -m beeline_ingestor.crosslink.news_ingestor` or the main CLI in `beeline_ingestor/cli.py`.
 
+## Search & Cross-Linking (Week 8)
+
+- `pgvector` powers the new `document_embeddings` table; embeddings are generated via `text-embedding-3-small` with `beeline_ingestor/embeddings/service.py`. The `scripts/backfill_embeddings.py` helper indexes existing releases/articles.
+- Meilisearch maintains BM25-style indexes for releases and news articles (`HybridSearchService`). New API endpoints `/search/releases` and `/search/articles` expose hybrid results (<500 ms P95 locally).
+- Cross-linking now relies on `HybridSearchService.search_articles_for_release`, storing similarity scores + rationales in `release_article_links`.
+- Retrieval evaluation script (`scripts/run_search_evaluation.py`) computes NDCG@3 / Recall@5 from `evaluation/retrieval_queries.json`, with results summarized in `docs/search/week8-report.md`.
+
 ## Database / SQL
 
 - Postgres creds (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) must exist in the env file Compose uses; otherwise the container stays unhealthy.

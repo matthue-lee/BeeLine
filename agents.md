@@ -499,6 +499,11 @@ Summary/Release (1) ──→ (N) ContentFlags ──→ Manual Review
 - Admin panel (job control, prompt testing)
 - Manual summary override UI
 - Content flag resolution interface
+- Entity management console (list/edit canonical entities, fix HTML/noise, merge duplicates)
+- Entity mention explorer (see latest mentions with source docs, bulk delete bad ones)
+- News article QA (inspect latest articles, re-fetch or delete)
+- Dashboard showing key counters (release/news totals, entity counts) and freshness indicators
+- Audit log of manual overrides/edits for traceability
 - **Test admin workflows end-to-end**
 - **Deliverable**: Non-technical admin can manage system
 

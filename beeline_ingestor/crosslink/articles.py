@@ -101,6 +101,14 @@ class NewsArticleRepository:
             session.execute(delete(NewsArticle).where(NewsArticle.id.in_(old_ids)))
             return len(old_ids)
 
+    def get_by_ids(self, article_ids: Iterable[str]) -> dict[str, NewsArticle]:
+        ids = list(article_ids)
+        if not ids:
+            return {}
+        with self.database.session() as session:
+            stmt = select(NewsArticle).where(NewsArticle.id.in_(ids))
+            return {article.id: article for article in session.execute(stmt).scalars().all()}
+
     def count_articles(self) -> int:
         """Return the current number of stored news articles."""
 

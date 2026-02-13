@@ -11,9 +11,11 @@ import feedparser
 import requests
 
 from ..config import AppConfig
+from ..embeddings import EmbeddingService
 from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
 from ..entity_extraction.store import EntityStore
 from ..db import Database
+from ..search import HybridSearchService
 from ..observability import record_rss_fetch_metrics
 from ..observability_news import record_news_ingestion_metrics
 from ..utils import parse_datetime
@@ -40,6 +42,12 @@ class NewsIngestor:
         self.database = Database(config)
         self.database.create_all()
         self.repository = NewsArticleRepository(self.database)
+        self.embedding_service = EmbeddingService(config, self.database)
+        self.search_service: HybridSearchService | None = None
+        try:
+            self.search_service = HybridSearchService(config, self.database, self.embedding_service)
+        except Exception:
+            logger.exception("Hybrid search unavailable for news ingestor")
         self.session = requests.Session()
         self.retention_days = config.crosslink.retention_days
         self.canonicalizer = EntityCanonicalizer(config.entity_extraction) if config.enable_entity_extraction else None
@@ -92,12 +100,25 @@ class NewsIngestor:
                     article = self._build_article(entry, source_name)
                     if not article:
                         continue
-                    record, was_inserted = self.repository.upsert(article)
-                    if was_inserted:
-                        inserted += 1
-                    else:
-                        updated += 1
-                    self._run_entity_extraction(record)
+                record, was_inserted = self.repository.upsert(article)
+                if was_inserted:
+                    inserted += 1
+                else:
+                    updated += 1
+                self._run_entity_extraction(record)
+                indexed = False
+                if self.search_service:
+                    try:
+                        self.search_service.index_article(record)
+                        indexed = True
+                    except Exception:
+                        logger.exception("Failed to index article %s", record.id)
+                if not indexed and (record.text_clean or record.summary):
+                    self.embedding_service.ensure_embedding(
+                        doc_type="article",
+                        document_id=record.id,
+                        text=record.text_clean or record.summary or "",
+                    )
 
             logger.info(
                 "News ingest complete feeds=%s seen=%s inserted=%s updated=%s",

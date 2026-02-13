@@ -8,7 +8,8 @@ from typing import List
 
 from ..config import AppConfig
 from ..db import Database
-from ..models import ReleaseArticleLink, ReleaseDocument
+from ..models import ReleaseArticleLink, ReleaseDocument, Summary
+from ..search.service import HybridSearchService
 from .articles import NewsArticleRepository
 
 WORD_RE = re.compile(r"[A-Za-z]{3,}")
@@ -17,14 +18,38 @@ WORD_RE = re.compile(r"[A-Za-z]{3,}")
 class CrossLinker:
     """Score releases against stored news articles."""
 
-    def __init__(self, database: Database, config: AppConfig):
+    def __init__(self, database: Database, config: AppConfig, search_service: HybridSearchService | None = None):
         self.database = database
         self.repository = NewsArticleRepository(database)
         self.link_limit = config.crosslink.link_limit
         self.article_limit = config.crosslink.max_articles
+        self.search_service = search_service
 
-    def link_release(self, release: ReleaseDocument) -> None:
+    def link_release(self, release: ReleaseDocument, summary: Summary | None = None) -> None:
         """Compute similarity to news articles and persist top matches."""
+
+        if self.search_service:
+            hits = self.search_service.search_articles_for_release(release, summary, limit=self.link_limit * 2)
+            article_map = self.repository.get_by_ids([hit["id"] for hit in hits])
+            links: list[ReleaseArticleLink] = []
+            for hit in hits:
+                article = article_map.get(hit["id"])
+                if not article:
+                    continue
+                rationale = f"Hybrid score: {hit['score']:.3f}"
+                links.append(
+                    ReleaseArticleLink(
+                        release_id=release.id,
+                        article_id=article.id,
+                        similarity=float(hit["score"]),
+                        rationale=rationale,
+                    )
+                )
+                if len(links) >= self.link_limit:
+                    break
+            if links:
+                self.repository.replace_links(release.id, links)
+            return
 
         reference_text = release.text_clean or ""
         if not reference_text.strip():

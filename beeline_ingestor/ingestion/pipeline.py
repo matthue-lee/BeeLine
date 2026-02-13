@@ -10,11 +10,13 @@ from typing import Optional
 from ..config import AppConfig
 from ..crosslink import CrossLinker
 from ..db import Database
+from ..embeddings import EmbeddingService
 from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
 from ..entity_extraction.store import EntityStore
-from ..models import DocumentStatus, IngestionRun
+from ..models import DocumentStatus, IngestionRun, Summary
 from ..observability import record_ingestion_metrics
 from ..summarization.service import SummaryService
+from ..search.service import HybridSearchService
 from .cleaner import ContentCleaner
 from .fetcher import ArticleFetcher
 from .rss import FeedClient, FeedEntry
@@ -55,7 +57,13 @@ class IngestionPipeline:
         self.fetcher = ArticleFetcher(config.feeds)
         self.cleaner = ContentCleaner()
         self.repository = ReleaseRepository(self.database, config)
-        self.linker = CrossLinker(self.database, config)
+        self.embedding_service = EmbeddingService(config, self.database)
+        self.search_service: HybridSearchService | None = None
+        try:
+            self.search_service = HybridSearchService(config, self.database, self.embedding_service)
+        except Exception:
+            logger.exception("Hybrid search initialisation failed; falling back to legacy linking")
+        self.linker = CrossLinker(self.database, config, search_service=self.search_service)
         self.canonicalizer = EntityCanonicalizer(config.entity_extraction) if config.enable_entity_extraction else None
         self.entity_store = (
             EntityStore(self.database, canonicalizer=self.canonicalizer)
@@ -117,11 +125,24 @@ class IngestionPipeline:
 
                 if document.status in {DocumentStatus.FAILED_FETCH, DocumentStatus.EMPTY_PARSE}:
                     failed += 1
-                else:
-                    self.linker.link_release(document)
-                    self._run_entity_extraction(document)
-                    if was_inserted:
-                        self._maybe_generate_summary(document)
+                    continue
+
+                summary = self._maybe_generate_summary(document)
+                self._run_entity_extraction(document)
+                indexed = False
+                if self.search_service:
+                    try:
+                        self.search_service.index_release(document, summary)
+                        indexed = True
+                    except Exception:
+                        logger.exception("Failed to index release %s for search", document.id)
+                if not indexed:
+                    self.embedding_service.ensure_embedding(
+                        doc_type="release",
+                        document_id=document.id,
+                        text=document.text_clean or document.text_raw or "",
+                    )
+                self.linker.link_release(document, summary)
 
             total_items = len(seen_ids)
             logger.info(
@@ -232,12 +253,13 @@ class IngestionPipeline:
             return
         self.entity_store.persist(document.id, "release", text, result.entities)
 
-    def _maybe_generate_summary(self, document) -> None:
+    def _maybe_generate_summary(self, document) -> Summary | None:
         if not self.summary_service:
-            return
+            return None
         try:
-            self.summary_service.generate_if_needed(document)
+            return self.summary_service.generate_if_needed(document)
         except RuntimeError:
             logger.warning("No active prompt templates found; skipping summary")
         except Exception:
             logger.exception("Failed to generate summary for %s", document.id)
+        return None

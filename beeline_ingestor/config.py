@@ -70,7 +70,7 @@ class SchedulerJobConfig:
     """Base configuration shared by scheduled jobs."""
 
     enabled: bool = True
-    interval: timedelta = timedelta(minutes=60)
+    interval: timedelta = timedelta(minutes=15)
     initial_delay: timedelta = timedelta(seconds=30)
 
 

@@ -208,6 +208,89 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
         ]
         return jsonify({"items": items, "count": len(items)})
 
+    @app.route("/search/releases", methods=["GET"])
+    def search_releases_api() -> Any:
+        query = request.args.get("q", "").strip()
+        if not query:
+            return jsonify({"error": "q parameter required"}), 400
+        try:
+            limit = min(max(int(request.args.get("limit", "10")), 1), 50)
+        except ValueError:
+            limit = 10
+        search_service = getattr(app.pipeline, "search_service", None)  # type: ignore[attr-defined]
+        if not search_service:
+            return jsonify({"error": "search service unavailable"}), 503
+        filters: Dict[str, Any] = {}
+        minister = request.args.get("minister")
+        portfolio = request.args.get("portfolio")
+        if minister:
+            filters["minister"] = minister
+        if portfolio:
+            filters["portfolio"] = portfolio
+        hits = search_service.search_releases(query, limit=limit, filters=filters or None)
+        release_ids = [hit["id"] for hit in hits]
+        payload: list[dict[str, Any]] = []
+        if release_ids:
+            with app.pipeline.database.session() as session:  # type: ignore[attr-defined]
+                stmt = select(ReleaseDocument).where(ReleaseDocument.id.in_(release_ids))
+                releases = {row.id: row for row in session.execute(stmt).scalars().all()}
+                summary_stmt = select(Summary).where(Summary.release_id.in_(release_ids))
+                summaries = {row.release_id: row for row in session.execute(summary_stmt).scalars().all()}
+            for hit in hits:
+                release = releases.get(hit["id"])
+                if not release:
+                    continue
+                payload.append(
+                    {
+                        "id": release.id,
+                        "title": release.title,
+                        "url": release.url,
+                        "published_at": release.published_at.isoformat() if release.published_at else None,
+                        "score": hit["score"],
+                        "summary": _serialize_summary(summaries.get(release.id)),
+                    }
+                )
+        return jsonify({"items": payload, "query": query})
+
+    @app.route("/search/articles", methods=["GET"])
+    def search_articles_api() -> Any:
+        query = request.args.get("q", "").strip()
+        if not query:
+            return jsonify({"error": "q parameter required"}), 400
+        try:
+            limit = min(max(int(request.args.get("limit", "10")), 1), 50)
+        except ValueError:
+            limit = 10
+        search_service = getattr(app.pipeline, "search_service", None)  # type: ignore[attr-defined]
+        if not search_service:
+            return jsonify({"error": "search service unavailable"}), 503
+        filters: Dict[str, Any] = {}
+        source = request.args.get("source")
+        if source:
+            filters["source"] = source
+        hits = search_service.search_articles(query, limit=limit, filters=filters or None)
+        article_ids = [hit["id"] for hit in hits]
+        payload: list[dict[str, Any]] = []
+        if article_ids:
+            with app.pipeline.database.session() as session:  # type: ignore[attr-defined]
+                stmt = select(NewsArticle).where(NewsArticle.id.in_(article_ids))
+                articles = {row.id: row for row in session.execute(stmt).scalars().all()}
+            for hit in hits:
+                article = articles.get(hit["id"])
+                if not article:
+                    continue
+                payload.append(
+                    {
+                        "id": article.id,
+                        "title": article.title,
+                        "url": article.url,
+                        "source": article.source,
+                        "published_at": article.published_at.isoformat() if article.published_at else None,
+                        "score": hit["score"],
+                    }
+                )
+        return jsonify({"items": payload, "query": query})
+
     @app.route("/costs", methods=["GET"])
     def cost_report() -> Any:
         """Return aggregated cost metrics over the requested time window."""
