@@ -120,7 +120,8 @@ class IngestionPipeline:
                 else:
                     self.linker.link_release(document)
                     self._run_entity_extraction(document)
-                    self._maybe_generate_summary(document)
+                    if was_inserted:
+                        self._maybe_generate_summary(document)
 
             total_items = len(seen_ids)
             logger.info(

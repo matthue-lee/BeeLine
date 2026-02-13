@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, List
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ..db import Database
 from ..models import NewsArticle, ReleaseArticleLink
@@ -100,3 +100,9 @@ class NewsArticleRepository:
             session.execute(delete(ReleaseArticleLink).where(ReleaseArticleLink.article_id.in_(old_ids)))
             session.execute(delete(NewsArticle).where(NewsArticle.id.in_(old_ids)))
             return len(old_ids)
+
+    def count_articles(self) -> int:
+        """Return the current number of stored news articles."""
+
+        with self.database.session() as session:
+            return session.execute(select(func.count(NewsArticle.id))).scalar_one()

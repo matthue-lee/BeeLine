@@ -2,16 +2,23 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Optional
+
+from time import perf_counter
 
 from ..config import AppConfig
 from ..costs import CostTracker
 from ..db import Database
 from ..models import ReleaseDocument, Summary
+from ..observability import record_summary_metrics
 from ..prompt_templates import PromptTemplateRepository
 from ..schemas.summary import SummaryPayload
 from ..llm.client import LLMClient, SummaryValidationError
+from ..verification.service import VerificationService
 from .cache import SummaryCache
+
+logger = logging.getLogger(__name__)
 
 
 class SummaryGenerationError(RuntimeError):
@@ -87,8 +94,10 @@ class SummaryService:
         self.repo = SummaryRepository(database)
         ttl_seconds = int(os.getenv('SUMMARY_CACHE_TTL', '86400'))
         self.cache = SummaryCache(ttl_seconds=ttl_seconds)
+        self.verification_service = VerificationService(config, database, llm_client=self.llm_client)
 
     def generate_if_needed(self, document: ReleaseDocument) -> Optional[Summary]:
+        start = perf_counter()
         existing = self.repo.get_by_release(document.id)
         if existing:
             if not self.cache.get(document.id):
@@ -96,8 +105,10 @@ class SummaryService:
                     self.cache.set(document.id, _payload_from_model(existing))
                 except ValueError:
                     pass
+            record_summary_metrics("cache_hit", duration_seconds=perf_counter() - start)
             return existing
         if not document.text_clean:
+            record_summary_metrics("skipped_no_text", duration_seconds=perf_counter() - start)
             return None
         template = self.prompt_repo.choose_active('summarize')
         metadata = {
@@ -113,6 +124,7 @@ class SummaryService:
                 metadata=metadata,
             )
         except SummaryValidationError as exc:
+            record_summary_metrics("failed", duration_seconds=perf_counter() - start)
             raise SummaryGenerationError(str(exc)) from exc
         summary = self.repo.upsert(
             release_id=document.id,
@@ -125,4 +137,9 @@ class SummaryService:
         )
         self.cache.invalidate(document.id)
         self.cache.set(document.id, result.payload)
+        try:
+            self.verification_service.process_summary(document, summary, result.payload)
+        except Exception:  # pragma: no cover - verification failures shouldn't crash summarization
+            logger.exception("Verification pipeline failed for release %s", document.id)
+        record_summary_metrics("success", duration_seconds=perf_counter() - start)
         return summary

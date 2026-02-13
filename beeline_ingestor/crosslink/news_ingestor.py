@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import perf_counter
 from urllib.parse import urlparse
 
 import feedparser
@@ -13,6 +14,8 @@ from ..config import AppConfig
 from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
 from ..entity_extraction.store import EntityStore
 from ..db import Database
+from ..observability import record_rss_fetch_metrics
+from ..observability_news import record_news_ingestion_metrics
 from ..utils import parse_datetime
 from .articles import ArticleInput, NewsArticleRepository
 
@@ -57,41 +60,76 @@ class NewsIngestor:
         feeds = self.config.crosslink.feeds
         inserted = updated = 0
         seen = 0
+        pruned = 0
+        status = "completed"
+        started = perf_counter()
 
-        for feed_url in feeds:
-            logger.info("Fetching external feed %s", feed_url)
-            try:
-                response = self.session.get(feed_url, timeout=30)
-                response.raise_for_status()
-            except requests.RequestException as exc:
-                logger.warning("Failed to fetch %s: %s", feed_url, exc)
-                continue
-
-            parsed = feedparser.parse(response.content)
-            source_name = parsed.feed.get("title") or urlparse(feed_url).netloc
-            for entry in parsed.entries:
-                seen += 1
-                article = self._build_article(entry, source_name)
-                if not article:
+        try:
+            for feed_url in feeds:
+                logger.info("Fetching external feed %s", feed_url)
+                feed_start = perf_counter()
+                try:
+                    response = self.session.get(feed_url, timeout=30)
+                    response.raise_for_status()
+                    record_rss_fetch_metrics(
+                        feed_url,
+                        str(response.status_code),
+                        duration_seconds=perf_counter() - feed_start,
+                    )
+                except requests.RequestException as exc:
+                    logger.warning("Failed to fetch %s: %s", feed_url, exc)
+                    record_rss_fetch_metrics(
+                        feed_url,
+                        "error",
+                        duration_seconds=perf_counter() - feed_start,
+                    )
                     continue
-                record, was_inserted = self.repository.upsert(article)
-                if was_inserted:
-                    inserted += 1
-                else:
-                    updated += 1
-                self._run_entity_extraction(record)
 
-        logger.info(
-            "News ingest complete feeds=%s seen=%s inserted=%s updated=%s",
-            len(feeds),
-            seen,
-            inserted,
-            updated,
-        )
-        pruned = self.repository.prune(self.retention_days)
-        if pruned:
-            logger.info("Pruned %s stale news articles older than %s days", pruned, self.retention_days)
-        return NewsIngestResult(total_feeds=len(feeds), articles_seen=seen, inserted=inserted, updated=updated)
+                parsed = feedparser.parse(response.content)
+                source_name = parsed.feed.get("title") or urlparse(feed_url).netloc
+                for entry in parsed.entries:
+                    seen += 1
+                    article = self._build_article(entry, source_name)
+                    if not article:
+                        continue
+                    record, was_inserted = self.repository.upsert(article)
+                    if was_inserted:
+                        inserted += 1
+                    else:
+                        updated += 1
+                    self._run_entity_extraction(record)
+
+            logger.info(
+                "News ingest complete feeds=%s seen=%s inserted=%s updated=%s",
+                len(feeds),
+                seen,
+                inserted,
+                updated,
+            )
+            pruned = self.repository.prune(self.retention_days)
+            if pruned:
+                logger.info("Pruned %s stale news articles older than %s days", pruned, self.retention_days)
+            return NewsIngestResult(total_feeds=len(feeds), articles_seen=seen, inserted=inserted, updated=updated)
+        except Exception:
+            status = "failed"
+            logger.exception("News ingest failed")
+            raise
+        finally:
+            duration = perf_counter() - started
+            article_total = None
+            try:
+                article_total = self.repository.count_articles()
+            except Exception:
+                logger.warning("Unable to compute news article count for metrics", exc_info=True)
+            record_news_ingestion_metrics(
+                status=status,
+                seen=seen,
+                inserted=inserted,
+                updated=updated,
+                pruned=pruned if status == "completed" else 0,
+                duration_seconds=duration,
+                article_total=article_total,
+            )
 
     def _run_entity_extraction(self, record) -> None:
         if not self.entity_service or not self.entity_store:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE=${ENV_FILE:-.env.docker}
+ENV_FILE=${ENV_FILE:-.env}
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy .env.docker.example and update secrets." >&2

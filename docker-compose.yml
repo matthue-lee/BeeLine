@@ -95,10 +95,9 @@ services:
     command: [
       "python",
       "-m",
-      "beeline_ingestor",
-      "--since",
-      "${WORKER_SINCE:-2024-01-01T00:00:00+00:00}"
+      "beeline_ingestor.scheduler.service"
     ]
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
@@ -107,6 +106,16 @@ services:
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
       SENTRY_PROFILES_SAMPLE_RATE: ${SENTRY_PROFILES_SAMPLE_RATE:-0.0}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-1}
+      SCHEDULER_METRICS_PORT: ${SCHEDULER_METRICS_PORT:-9101}
+      SCHEDULER_RELEASE_ENABLED: ${SCHEDULER_RELEASE_ENABLED:-1}
+      SCHEDULER_RELEASE_INTERVAL_MINUTES: ${SCHEDULER_RELEASE_INTERVAL_MINUTES:-15}
+      SCHEDULER_RELEASE_INITIAL_DELAY_SECONDS: ${SCHEDULER_RELEASE_INITIAL_DELAY_SECONDS:-30}
+      SCHEDULER_RELEASE_LOOKBACK_HOURS: ${SCHEDULER_RELEASE_LOOKBACK_HOURS:-6}
+      SCHEDULER_RELEASE_SOURCE_LABEL: ${SCHEDULER_RELEASE_SOURCE_LABEL:-rss}
+      SCHEDULER_NEWS_ENABLED: ${SCHEDULER_NEWS_ENABLED:-1}
+      SCHEDULER_NEWS_INTERVAL_MINUTES: ${SCHEDULER_NEWS_INTERVAL_MINUTES:-60}
+      SCHEDULER_NEWS_INITIAL_DELAY_SECONDS: ${SCHEDULER_NEWS_INITIAL_DELAY_SECONDS:-60}
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,7 +139,38 @@ services:
       postgres:
         condition: service_healthy
 
+  alloy:
+    image: grafana/alloy:latest
+    restart: unless-stopped
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    environment:
+      GCLOUD_RW_API_KEY: ${GCLOUD_RW_API_KEY}
+      GCLOUD_FM_URL: ${GCLOUD_FM_URL}
+      GCLOUD_FM_COLLECTOR_ID: ${GCLOUD_FM_COLLECTOR_ID}
+      GCLOUD_FM_HOSTED_ID: ${GCLOUD_FM_HOSTED_ID}
+      GCLOUD_HOSTED_METRICS_URL: ${GCLOUD_HOSTED_METRICS_URL}
+      GCLOUD_HOSTED_METRICS_ID: ${GCLOUD_HOSTED_METRICS_ID}
+      GCLOUD_HOSTED_LOGS_URL: ${GCLOUD_HOSTED_LOGS_URL}
+      GCLOUD_HOSTED_LOGS_ID: ${GCLOUD_HOSTED_LOGS_ID}
+      GCLOUD_FM_LOG_PATH: /var/log/alloy/alloy.log
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy
+      - alloy-logs:/var/log/alloy
+    ports:
+      - "${ALLOY_HTTP_PORT:-12345}:12345"
+    depends_on:
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+
 volumes:
   pgdata:
   redisdata:
   meilidata:
+  alloy-data:
+  alloy-logs:

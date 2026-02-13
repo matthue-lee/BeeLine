@@ -66,6 +66,34 @@ class CrossLinkConfig:
 
 
 @dataclass(slots=True)
+class SchedulerJobConfig:
+    """Base configuration shared by scheduled jobs."""
+
+    enabled: bool = True
+    interval: timedelta = timedelta(minutes=60)
+    initial_delay: timedelta = timedelta(seconds=30)
+
+
+@dataclass(slots=True)
+class ReleaseSchedulerConfig(SchedulerJobConfig):
+    """Release ingestion specific scheduler settings."""
+
+    interval: timedelta = timedelta(minutes=15)
+    lookback: timedelta = timedelta(hours=6)
+    source_label: str = "rss"
+
+
+@dataclass(slots=True)
+class SchedulerConfig:
+    """Top-level scheduler behaviour toggles and job configs."""
+
+    enabled: bool = True
+    metrics_port: int = 9101
+    release_ingest: ReleaseSchedulerConfig = field(default_factory=ReleaseSchedulerConfig)
+    news_ingest: SchedulerJobConfig = field(default_factory=lambda: SchedulerJobConfig(interval=timedelta(hours=1), initial_delay=timedelta(minutes=1)))
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level configuration aggregation."""
 
@@ -81,6 +109,7 @@ class AppConfig:
     sentry_traces_sample_rate: float = 0.0
     sentry_profiles_sample_rate: float = 0.0
     cost_limits: BudgetLimits = field(default_factory=lambda: BudgetLimits(50.0, 600.0, 12000.0))
+    scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -149,6 +178,36 @@ class AppConfig:
             monthly_usd=float(os.getenv("CIRCUIT_BREAKER_MONTHLY_USD", "12000")),
         )
 
+        scheduler = SchedulerConfig(
+            enabled=bool(int(os.getenv("SCHEDULER_ENABLED", "1"))),
+            metrics_port=int(os.getenv("SCHEDULER_METRICS_PORT", "9101")),
+        )
+        release_enabled = os.getenv("SCHEDULER_RELEASE_ENABLED")
+        if release_enabled is not None:
+            scheduler.release_ingest.enabled = bool(int(release_enabled))
+        release_interval = os.getenv("SCHEDULER_RELEASE_INTERVAL_MINUTES")
+        if release_interval:
+            scheduler.release_ingest.interval = timedelta(minutes=max(1, int(release_interval)))
+        release_initial_delay = os.getenv("SCHEDULER_RELEASE_INITIAL_DELAY_SECONDS")
+        if release_initial_delay:
+            scheduler.release_ingest.initial_delay = timedelta(seconds=max(0, int(release_initial_delay)))
+        release_lookback = os.getenv("SCHEDULER_RELEASE_LOOKBACK_HOURS")
+        if release_lookback:
+            scheduler.release_ingest.lookback = timedelta(hours=max(1, int(release_lookback)))
+        release_source = os.getenv("SCHEDULER_RELEASE_SOURCE_LABEL")
+        if release_source:
+            scheduler.release_ingest.source_label = release_source
+
+        news_enabled = os.getenv("SCHEDULER_NEWS_ENABLED")
+        if news_enabled is not None:
+            scheduler.news_ingest.enabled = bool(int(news_enabled))
+        news_interval = os.getenv("SCHEDULER_NEWS_INTERVAL_MINUTES")
+        if news_interval:
+            scheduler.news_ingest.interval = timedelta(minutes=max(1, int(news_interval)))
+        news_initial_delay = os.getenv("SCHEDULER_NEWS_INITIAL_DELAY_SECONDS")
+        if news_initial_delay:
+            scheduler.news_ingest.initial_delay = timedelta(seconds=max(0, int(news_initial_delay)))
+
         return cls(
             feeds=feeds,
             database=database,
@@ -162,6 +221,7 @@ class AppConfig:
             sentry_traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
             sentry_profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
             cost_limits=breaker_limits,
+            scheduler=scheduler,
         )
 
 

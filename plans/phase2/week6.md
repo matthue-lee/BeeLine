@@ -6,6 +6,17 @@
 - Every claim in production summaries links to at least one supporting evidence snippet or is flagged for review.
 - Verification outputs (scores, rationales, flags) stored in Postgres and fed into monitoring dashboards.
 
+## Context & Dependencies
+- **Prerequisites:** Week 5 summarization pipeline (structured JSON summaries + prompt metadata) and ingestion storing raw release text with sentence indexes. pgvector or another embedding store must be available (Week 8 work may be partially reused).
+- **Existing tools:** `SummaryPayload` structure, `content_flags` table, Prometheus metrics registry, Redis cache, Sentry alerting. Ensure spaCy sentence splitter or equivalent deterministic tokenizer is available for evidence chunking.
+- **Downstream consumers:** Admin panel (Week 14) will surface verification outcomes; evaluation suite (Week 13) depends on these metrics for nightly regressions.
+
+## Stakeholders & Communication
+- **Owner:** Backend/AI engineer implementing claims + verification.
+- **Reviewers:** Product (definition of “supported claim”), Ops (alert thresholds / runbooks), Data lead (evaluation dataset).
+- **Cadence:** Daily async status in project channel, mid-week sync demo of verification UI/API, end-of-week write-up (`docs/verification/week6-report.md`).
+- **Artifacts:** Updated ERD, API docs for verification endpoints, Grafana dashboards/panels for pass rate + latency, runbook for reprocessing failed claims.
+
 ## Workstreams & Detailed Tasks
 
 ### 1. Claim Extraction Pipeline
@@ -33,11 +44,11 @@
 4. Document runbook for reprocessing claims when prompt versions change or new evidence data arrives.
 
 ## Day-by-Day Timeline
-- **Day 1:** Model `claims` + `claim_verifications` schema, implement extraction logic, seed with existing summaries.
-- **Day 2:** Build evidence retrieval service (sentence chunking, hybrid search, caching) and benchmark latency.
-- **Day 3:** Implement verification prompt + LLM workflow, store results with provenance.
-- **Day 4:** Wire flagging/alerting + admin inspection surfaces.
-- **Day 5:** Run evaluation set, tune thresholds to exceed 85% accuracy, and document findings in `docs/verification/week6-report.md`.
+- **Day 1:** Model `claims` + `claim_verifications` schema (Alembic migration, ORM, indexes) and implement claim extraction job; backfill existing summaries to populate baseline data.
+- **Day 2:** Build evidence retrieval microservice (sentence chunking, embedding cache, hybrid search) and record latency metrics; add Prometheus counters for retrieval hits/misses.
+- **Day 3:** Implement LLM verification workflow with structured outputs + circuit breaker budgets; persist verdicts/citations and expose internal API endpoints.
+- **Day 4:** Wire flagging + alerting (content flags, Slack/email) and create admin inspection endpoints/CLI for overrides; add dashboard panels showing pass rates + backlog.
+- **Day 5:** Run evaluation set, tune thresholds to hit ≥85% accuracy, document results in `docs/verification/week6-report.md`, and handoff runbook for reprocessing/failure scenarios.
 
 ## Validation Checklist
 - Every summary processed post-week6 has ≥1 claim with associated verification verdict.
@@ -57,3 +68,13 @@
 - Hybrid evidence retrieval utility with caching + metrics.
 - Verification prompt templates, accuracy report, and tuning notes.
 - Alerting + manual review workflow documentation.
+
+## Documentation & Runbooks
+- `docs/verification/week6-report.md` summarizing accuracy, latency, costs, lessons learned.
+- `docs/runbooks/claims_verification.md` covering incident response (LLM down, retrieval failure, backlog, schema updates).
+- Update API docs with verification endpoints and link structure; add Grafana dashboard JSON panels for pass rate/latency.
+
+## Open Questions & Follow-Ups
+- Do we need separate verification prompt versions per portfolio/ministry or is one template sufficient?
+- Should unsupported claims automatically suppress publication or merely flag? Confirm SLA with product/ops.
+- Clarify retention: how long to keep raw verification conversations vs summarized outcome for compliance.

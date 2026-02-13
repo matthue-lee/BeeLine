@@ -1,0 +1,53 @@
+remotecfg {
+	url            = coalesce(sys.env("GCLOUD_FM_URL"), "https://fleet-management-prod-017.grafana.net")
+	id             = coalesce(sys.env("GCLOUD_FM_COLLECTOR_ID"), "")
+	poll_frequency = coalesce(sys.env("GCLOUD_FM_POLL_FREQUENCY"), "60s")
+	attributes     = encoding.from_json(coalesce(``, `{}`))
+
+	basic_auth {
+		username = coalesce(sys.env("GCLOUD_FM_HOSTED_ID"), "")
+		password = sys.env("GCLOUD_RW_API_KEY")
+	}
+}
+
+loki.write "grafana_cloud_loki" {
+	endpoint {
+		url = coalesce(sys.env("GCLOUD_HOSTED_LOGS_URL"), "https://logs-prod-026.grafana.net/loki/api/v1/push")
+
+		basic_auth {
+			username = coalesce(sys.env("GCLOUD_HOSTED_LOGS_ID"), "")
+			password = sys.env("GCLOUD_RW_API_KEY")
+		}
+	}
+}
+
+prometheus.remote_write "metrics_hosted_prometheus" {
+	endpoint {
+		name = "hosted-prometheus"
+		url  = coalesce(sys.env("GCLOUD_HOSTED_METRICS_URL"), "https://prometheus-prod-41-prod-au-southeast-1.grafana.net/api/prom/push")
+
+		basic_auth {
+			username = coalesce(sys.env("GCLOUD_HOSTED_METRICS_ID"), "")
+			password = sys.env("GCLOUD_RW_API_KEY")
+		}
+	}
+}
+
+prometheus.scrape "local_targets" {
+	targets = [
+		{"__address__" = "ingestion-api:8000", job = "ingestion_api"},
+		{"__address__" = "queue-worker:9100", job = "queue_worker"},
+	]
+	forward_to = [prometheus.remote_write.metrics_hosted_prometheus.receiver]
+}
+
+loki.source.file "alloy_logs" {
+	targets = [
+		{
+			"__path__"     = sys.env("GCLOUD_FM_LOG_PATH"),
+			"collector_id" = coalesce(sys.env("GCLOUD_FM_COLLECTOR_ID"), ""),
+			"job"          = "integrations/alloy",
+		},
+	]
+	forward_to = [loki.write.grafana_cloud_loki.receiver]
+}

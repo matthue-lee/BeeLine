@@ -13,7 +13,7 @@ db/
 .vscode/
 .idea/
 .python-version
-.env.docker
+.env*
 
 # Worker build artifacts
 workers/node_modules/
@@ -22,11 +22,11 @@ workers/dist/
 # macOS noise
 .DS_Store
 
-# Node/Expo artifacts
-mobile-app/node_modules/
-mobile-app/.expo/
-mobile-app/.expo-shared/
-
 # Test caches
 .pytest_cache/
 tests/__pycache__/
+
+plans/
+docs/
+alloy/config.env
+*agents.md

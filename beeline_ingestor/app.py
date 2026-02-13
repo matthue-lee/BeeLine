@@ -5,13 +5,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from flask import Flask, Response, jsonify, request
+import time
+
+from flask import Flask, Response, jsonify, request, g
 from sqlalchemy import func, select
 
 from .config import AppConfig
 from .ingestion import IngestionPipeline
 from .models import DailyCost, DocumentStatus, JobRun, LLMCall, NewsArticle, ReleaseArticleLink, ReleaseDocument, Summary
-from .observability import init_sentry, render_metrics
+from .observability import init_sentry, render_metrics, record_http_request_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -277,3 +279,19 @@ def _serialize_summary(summary: Summary | None) -> Any:
         "tokens_used": summary.tokens_used,
         "raw_response": summary.raw_response,
     }
+    @app.before_request
+    def _start_timer() -> None:
+        g._request_start = time.perf_counter()
+
+    @app.after_request
+    def _record_request_metrics(response):
+        start = getattr(g, "_request_start", None)
+        if start is not None:
+            duration = time.perf_counter() - start
+            record_http_request_metrics(
+                method=request.method,
+                endpoint=request.endpoint or request.path,
+                status_code=response.status_code,
+                duration_seconds=duration,
+            )
+        return response

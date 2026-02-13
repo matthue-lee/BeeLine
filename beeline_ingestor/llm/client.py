@@ -47,6 +47,26 @@ class SummaryGenerationResult:
     cost_usd: float | None
 
 
+class ClaimVerificationResponseModel(BaseModel):
+    verdict: str
+    confidence: float = 0.0
+    rationale: Optional[str] = None
+    citations: list[int] = Field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ClaimVerificationResult:
+    verdict: str
+    confidence: float | None
+    rationale: str | None
+    evidence: list[dict]
+    model: str
+    prompt_version: Optional[str]
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+
+
 class SummaryValidationError(RuntimeError):
     pass
 
@@ -187,3 +207,108 @@ class LLMClient:
         except ValueError as exc:
             raise SummaryValidationError(str(exc)) from exc
         return payload
+
+    def verify_claim(
+        self,
+        *,
+        claim_text: str,
+        sentences: list[dict],
+        metadata: dict[str, Any],
+    ) -> ClaimVerificationResult:
+        if not sentences:
+            return ClaimVerificationResult(
+                verdict="insufficient",
+                confidence=0.0,
+                rationale="No evidence provided",
+                evidence=[],
+                model=self.model,
+                prompt_version=metadata.get("verification_prompt_version"),
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=0,
+            )
+
+        if self._simulate:
+            return ClaimVerificationResult(
+                verdict="supported",
+                confidence=0.8,
+                rationale="Simulation mode",
+                evidence=sentences[:1],
+                model=self.model,
+                prompt_version=metadata.get("verification_prompt_version"),
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=10,
+            )
+
+        parsed, prompt_tokens, completion_tokens, latency_ms = self._call_verify_openai(
+            claim_text=claim_text,
+            sentences=sentences,
+            metadata=metadata,
+        )
+        evidence_map = {entry.get("index"): entry for entry in sentences}
+        evidence_payload: list[dict] = []
+        for citation in parsed.citations:
+            if citation in evidence_map:
+                evidence_payload.append(evidence_map[citation])
+        self.cost_tracker.record_llm_call(
+            model=self.model,
+            operation="verify",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
+        return ClaimVerificationResult(
+            verdict=parsed.verdict,
+            confidence=parsed.confidence,
+            rationale=parsed.rationale,
+            evidence=evidence_payload or sentences[:1],
+            model=self.model,
+            prompt_version=metadata.get("verification_prompt_version"),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
+
+    def _call_verify_openai(
+        self,
+        *,
+        claim_text: str,
+        sentences: list[dict],
+        metadata: dict[str, Any],
+    ) -> tuple[ClaimVerificationResponseModel, int, int, int]:
+        if not self._client:
+            raise RuntimeError("OpenAI client not initialised")
+        system_prompt = metadata.get('verification_system_prompt') or (
+            "You verify policy claims strictly using the provided evidence. Cite the sentence indexes that support or contradict the claim."
+        )
+        lines = [f"[{entry.get('index')}] {entry.get('text')}" for entry in sentences]
+        user_content = "\n".join(
+            [
+                f"Claim: {claim_text}",
+                "Candidate evidence sentences:",
+                "\n".join(lines),
+                "Respond ONLY with JSON {verdict: supported|contradicted|insufficient, confidence: 0-1, rationale: string, citations: [indexes]}"
+            ]
+        )
+        call_start = perf_counter()
+        try:
+            response = self._client.responses.parse(
+                model=self.model,
+                temperature=0.0,
+                max_output_tokens=300,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                text_format=ClaimVerificationResponseModel,
+            )
+        except APIError as exc:  # pragma: no cover - network error path
+            logger.exception("Claim verification LLM call failed")
+            raise SummaryValidationError(f"LLM call failed: {exc}")
+        latency_ms = int(getattr(response, "response_ms", None) or ((perf_counter() - call_start) * 1000))
+        parsed: ClaimVerificationResponseModel = response.output_parsed  # type: ignore[assignment]
+        usage = getattr(response, "usage", None)
+        prompt_tokens = getattr(usage, "input_tokens", None) or self._estimate_tokens(user_content)
+        completion_tokens = getattr(usage, "output_tokens", None) or self._estimate_tokens(parsed.model_dump_json())
+        return parsed, int(prompt_tokens), int(completion_tokens), int(latency_ms)

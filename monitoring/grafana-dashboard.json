@@ -1,43 +1,134 @@
 {
   "title": "BeeLine System Overview",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
-      "type": "graph",
-      "title": "Queue Job Throughput",
+      "type": "timeseries",
+      "title": "Release Ingestion Runs",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [
+        {"expr": "sum(rate(beeline_ingestion_runs_total[5m])) by (status)", "legendFormat": "{{status}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Release Ingestion Duration (p95)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s"}},
       "targets": [
         {
-          "expr": "sum(rate(queue_job_results_total{status='completed'}[5m])) by (queue)",
-          "legendFormat": "{{queue}}"
+          "expr": "histogram_quantile(0.95, sum(rate(beeline_ingestion_run_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
         }
       ]
     },
     {
-      "type": "graph",
-      "title": "Queue Failures",
+      "type": "timeseries",
+      "title": "Summary Generation Outcomes",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [
+        {"expr": "sum(rate(beeline_summary_generations_total[5m])) by (status)", "legendFormat": "{{status}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Summary Latency (p95)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "s"}},
       "targets": [
         {
-          "expr": "sum(rate(queue_job_results_total{status='failed'}[5m])) by (queue)",
-          "legendFormat": "{{queue}}"
+          "expr": "histogram_quantile(0.95, sum(rate(beeline_summary_generation_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
         }
       ]
     },
     {
-      "type": "graph",
-      "title": "Queue Depth",
+      "type": "timeseries",
+      "title": "API Request Throughput",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {"expr": "sum(rate(beeline_http_requests_total[5m])) by (endpoint)", "legendFormat": "{{endpoint}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "API Latency (p95)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "s"}},
       "targets": [
         {
-          "expr": "queue_depth_total",
-          "legendFormat": "{{queue}} {{state}}"
+          "expr": "histogram_quantile(0.95, sum(rate(beeline_http_request_seconds_bucket[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}"
         }
       ]
     },
     {
-      "type": "table",
-      "title": "Cost Aggregates",
+      "type": "timeseries",
+      "title": "RSS Fetch Errors",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [
+        {"expr": "sum(rate(beeline_rss_requests_total{status!='200'}[15m])) by (status)", "legendFormat": "{{status}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "News Ingestion Runs",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {"expr": "sum(rate(beeline_news_ingestion_runs_total[15m])) by (status)", "legendFormat": "{{status}}"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "News Articles Processed",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "targets": [
+        {"expr": "sum(rate(beeline_news_articles_processed_total[15m])) by (result)", "legendFormat": "{{result}}"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "News Articles Stored",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 32},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "targets": [
+        {"expr": "max(beeline_news_articles_total)", "legendFormat": "articles"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Time Since Last News Ingest",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 32},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [
+        {"expr": "time() - clamp_min(beeline_news_ingestion_last_success_unixtime, 1)", "legendFormat": "seconds"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduler Job Duration",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+      "fieldConfig": {"defaults": {"unit": "s"}},
       "targets": [
         {
-          "expr": "sum_over_time(cost_hourly_usd{operation='summarize'}[24h])",
-          "legendFormat": "summarize"
+          "expr": "histogram_quantile(0.95, sum(rate(beeline_scheduler_job_seconds_bucket[5m])) by (le, job))",
+          "legendFormat": "{{job}} p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduler Job Skips",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+      "targets": [
+        {
+          "expr": "sum(increase(beeline_scheduler_job_skips_total[30m])) by (job, reason)",
+          "legendFormat": "{{job}} ({{reason}})"
         }
       ]
     }

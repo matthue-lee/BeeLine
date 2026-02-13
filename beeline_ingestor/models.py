@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import enum
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -344,4 +345,42 @@ class Summary(Base):
     tokens_used: Mapped[Optional[int]] = mapped_column(Integer)
     cost_usd: Mapped[Optional[float]] = mapped_column(Float)
     raw_response: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class Claim(Base):
+    """Normalized claims extracted from summaries."""
+
+    __tablename__ = "claims"
+    __table_args__ = (
+        Index("idx_claims_summary", "summary_id"),
+        Index("uq_claim_summary_index", "summary_id", "claim_index", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    summary_id: Mapped[int] = mapped_column(Integer, ForeignKey("summaries.id", ondelete="CASCADE"), nullable=False)
+    claim_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(32))
+    citations: Mapped[Optional[list[str]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ClaimVerification(Base):
+    """LLM-backed verification verdicts for claims."""
+
+    __tablename__ = "claim_verifications"
+    __table_args__ = (
+        Index("idx_claim_verifications_claim", "claim_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    claim_id: Mapped[str] = mapped_column(String(64), ForeignKey("claims.id", ondelete="CASCADE"), nullable=False)
+    verdict: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    evidence_sentences: Mapped[Optional[list[dict]]] = mapped_column(JSON)
+    model: Mapped[Optional[str]] = mapped_column(String(64))
+    prompt_version: Mapped[Optional[str]] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
