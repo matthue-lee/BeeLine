@@ -94,6 +94,16 @@ class SchedulerConfig:
 
 
 @dataclass(slots=True)
+class AdminAuthConfig:
+    """Session + OTP settings for the admin portal."""
+
+    code_ttl: timedelta = timedelta(minutes=10)
+    session_ttl: timedelta = timedelta(hours=12)
+    session_idle_timeout: timedelta = timedelta(minutes=15)
+    max_sessions_per_user: int = 10
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level configuration aggregation."""
 
@@ -110,6 +120,8 @@ class AppConfig:
     sentry_profiles_sample_rate: float = 0.0
     cost_limits: BudgetLimits = field(default_factory=lambda: BudgetLimits(50.0, 600.0, 12000.0))
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
+    admin_auth: AdminAuthConfig = field(default_factory=AdminAuthConfig)
+    skip_create_all: bool = bool(int(os.getenv("SKIP_CREATE_ALL", "0")))
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -208,6 +220,15 @@ class AppConfig:
         if news_initial_delay:
             scheduler.news_ingest.initial_delay = timedelta(seconds=max(0, int(news_initial_delay)))
 
+        admin_auth = AdminAuthConfig(
+            code_ttl=timedelta(minutes=max(1, int(os.getenv("ADMIN_CODE_TTL_MINUTES", "10")))),
+            session_ttl=timedelta(hours=max(1, int(os.getenv("ADMIN_SESSION_TTL_HOURS", "12")))),
+            session_idle_timeout=timedelta(minutes=max(5, int(os.getenv("ADMIN_SESSION_IDLE_MINUTES", "15")))),
+            max_sessions_per_user=int(os.getenv("ADMIN_MAX_SESSIONS", "10")),
+        )
+
+        skip_create_all = bool(int(os.getenv("SKIP_CREATE_ALL", "0")))
+
         return cls(
             feeds=feeds,
             database=database,
@@ -222,6 +243,8 @@ class AppConfig:
             sentry_profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
             cost_limits=breaker_limits,
             scheduler=scheduler,
+            admin_auth=admin_auth,
+            skip_create_all=skip_create_all,
         )
 
 

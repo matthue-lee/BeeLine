@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ENV_FILE=${ENV_FILE:-.env.docker}
+ENV_FILE=${ENV_FILE:-.env}
 
 # Default: keep volumes (preserve data)
 # Pass --volumes or -v flag to delete data

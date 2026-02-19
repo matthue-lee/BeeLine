@@ -52,7 +52,9 @@ class IngestionPipeline:
     def __init__(self, config: AppConfig):
         self.config = config
         self.database = Database(config)
-        self.database.create_all()
+        # Ensure tables exist in development environments; production should rely on Alembic.
+        if not config.skip_create_all:
+            self.database.create_all()
         self.feed_client = FeedClient(config.feeds)
         self.fetcher = ArticleFetcher(config.feeds)
         self.cleaner = ContentCleaner()

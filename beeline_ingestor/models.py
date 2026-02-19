@@ -403,3 +403,78 @@ class ClaimVerification(Base):
     model: Mapped[Optional[str]] = mapped_column(String(64))
     prompt_version: Mapped[Optional[str]] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AdminRole(str, enum.Enum):
+    """Roles controlling access to admin functionality."""
+
+    OPERATOR = "operator"
+    ADMIN = "admin"
+
+
+class AdminUser(Base):
+    """Administrative user able to access the operations dashboard."""
+
+    __tablename__ = "admin_users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(128))
+    role: Mapped[AdminRole] = mapped_column(Enum(AdminRole), default=AdminRole.OPERATOR)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class AdminLoginCode(Base):
+    """Ephemeral OTP used for passwordless authentication."""
+
+    __tablename__ = "admin_login_codes"
+    __table_args__ = (
+        Index("idx_admin_login_codes_user", "user_id"),
+        Index("idx_admin_login_codes_expires", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AdminSession(Base):
+    """Session tokens backing admin portal access."""
+
+    __tablename__ = "admin_sessions"
+    __table_args__ = (
+        Index("idx_admin_sessions_token", "token", unique=True),
+        Index("idx_admin_sessions_user", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id: Mapped[str] = mapped_column(String(64), ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    token: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64))
+
+
+class AdminAuditLog(Base):
+    """Audit trail of admin actions for accountability."""
+
+    __tablename__ = "admin_audit_logs"
+    __table_args__ = (
+        Index("idx_admin_audit_logs_user", "user_id"),
+        Index("idx_admin_audit_logs_created", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: uuid.uuid4().hex)
+    user_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("admin_users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(128), nullable=False)
+    context: Mapped[Optional[dict]] = mapped_column(JSON)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

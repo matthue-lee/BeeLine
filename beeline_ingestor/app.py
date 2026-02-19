@@ -10,6 +10,7 @@ import time
 from flask import Flask, Response, jsonify, request, g
 from sqlalchemy import func, select
 
+from .admin import AdminAuthService, create_admin_blueprint
 from .config import AppConfig
 from .ingestion import IngestionPipeline
 from .models import DailyCost, DocumentStatus, JobRun, LLMCall, NewsArticle, ReleaseArticleLink, ReleaseDocument, Summary
@@ -25,6 +26,9 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
     app_config = config or AppConfig.from_env()
     app.config["APP_CONFIG"] = app_config
     app.pipeline = IngestionPipeline(app_config)  # type: ignore[attr-defined]
+    admin_auth_service = AdminAuthService(app_config.admin_auth, app.pipeline.database)
+    app.extensions["admin_auth_service"] = admin_auth_service
+    app.register_blueprint(create_admin_blueprint(admin_auth_service, app.pipeline.database))
     init_sentry(
         app_config.sentry_dsn,
         environment=app_config.sentry_environment,
