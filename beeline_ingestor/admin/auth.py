@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -13,6 +12,8 @@ from sqlalchemy import delete, select
 from ..config import AdminAuthConfig
 from ..db import Database
 from ..models import AdminAuditLog, AdminLoginCode, AdminRole, AdminSession, AdminUser
+from ..emailer import EmailSender
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,15 @@ class SessionValidationResult:
 class AdminAuthService:
     """Implements passwordless OTP login + bearer session tokens."""
 
-    def __init__(self, config: AdminAuthConfig, database: Database):
+    def __init__(
+        self,
+        config: AdminAuthConfig,
+        database: Database,
+        email_sender: EmailSender | None = None,
+    ):
         self.config = config
         self.database = database
+        self.email_sender = email_sender
 
     def request_code(self, email: str) -> None:
         normalized = email.strip().lower()
@@ -57,7 +64,7 @@ class AdminAuthService:
             )
             session.add(login_code)
 
-        logger.info("Admin OTP for %s: %s (expires %s)", normalized, code, expires_at.isoformat())
+        self._deliver_code_email(normalized, code, expires_at)
 
     def verify_code(self, email: str, code: str, ip_address: Optional[str] = None) -> tuple[str, datetime, AdminUser]:
         normalized = email.strip().lower()
@@ -168,3 +175,19 @@ class AdminAuthService:
         digest = hashlib.sha256()
         digest.update(code.encode("utf-8"))
         return digest.hexdigest()
+
+    def _deliver_code_email(self, email: str, code: str, expires_at: datetime) -> None:
+        if self.email_sender and self.email_sender.is_configured:
+            subject = "BeeLine Admin Login Code"
+            body = (
+                "Your BeeLine admin login code is: {code}\n\n"
+                "This code expires at {expires}. If you did not request it, you can ignore this email."
+            ).format(code=code, expires=expires_at.isoformat())
+            self.email_sender.send(to_address=email, subject=subject, body=body)
+            logger.info("Admin OTP email sent to %s", email)
+        else:
+            logger.warning(
+                "SMTP not configured; logging admin OTP for %s (development only)",
+                email,
+            )
+            logger.info("Admin OTP for %s: %s (expires %s)", email, code, expires_at.isoformat())

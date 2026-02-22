@@ -104,6 +104,19 @@ class AdminAuthConfig:
 
 
 @dataclass(slots=True)
+class SMTPConfig:
+    """SMTP settings for transactional email (OTP codes, alerts)."""
+
+    host: str = field(default_factory=lambda: os.getenv("SMTP_HOST", ""))
+    port: int = int(os.getenv("SMTP_PORT", "587"))
+    username: Optional[str] = field(default_factory=lambda: os.getenv("SMTP_USERNAME"))
+    password: Optional[str] = field(default_factory=lambda: os.getenv("SMTP_PASSWORD"))
+    from_address: str = field(default_factory=lambda: os.getenv("SMTP_FROM_ADDRESS", "no-reply@localhost"))
+    use_tls: bool = field(default_factory=lambda: bool(int(os.getenv("SMTP_USE_TLS", "1"))))
+    timeout_seconds: int = int(os.getenv("SMTP_TIMEOUT_SECONDS", "30"))
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level configuration aggregation."""
 
@@ -121,6 +134,7 @@ class AppConfig:
     cost_limits: BudgetLimits = field(default_factory=lambda: BudgetLimits(50.0, 600.0, 12000.0))
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     admin_auth: AdminAuthConfig = field(default_factory=AdminAuthConfig)
+    smtp: SMTPConfig = field(default_factory=SMTPConfig)
     skip_create_all: bool = bool(int(os.getenv("SKIP_CREATE_ALL", "0")))
 
     @classmethod
@@ -223,7 +237,7 @@ class AppConfig:
         admin_auth = AdminAuthConfig(
             code_ttl=timedelta(minutes=max(1, int(os.getenv("ADMIN_CODE_TTL_MINUTES", "10")))),
             session_ttl=timedelta(hours=max(1, int(os.getenv("ADMIN_SESSION_TTL_HOURS", "12")))),
-            session_idle_timeout=timedelta(minutes=max(5, int(os.getenv("ADMIN_SESSION_IDLE_MINUTES", "15")))),
+            session_idle_timeout=timedelta(minutes=max(5, int(os.getenv("ADMIN_SESSION_IDLE_MINUTES", "60")))),
             max_sessions_per_user=int(os.getenv("ADMIN_MAX_SESSIONS", "10")),
         )
 
