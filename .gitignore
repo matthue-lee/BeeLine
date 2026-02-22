@@ -33,3 +33,5 @@ docs/
 alloy/config.env
 *agents.md
 agents.md
+
+*.node_modules/
