@@ -34,4 +34,4 @@ alloy/config.env
 *agents.md
 agents.md
 
-*.node_modules/
+node_modules/

@@ -117,6 +117,15 @@ class SMTPConfig:
 
 
 @dataclass(slots=True)
+class CurrencyConfig:
+    """Display currency configuration (conversion from USD)."""
+
+    code: str = field(default_factory=lambda: os.getenv("CURRENCY_CODE", "NZD"))
+    symbol: str = field(default_factory=lambda: os.getenv("CURRENCY_SYMBOL", "NZ$"))
+    usd_to_local_rate: float = field(default_factory=lambda: float(os.getenv("USD_TO_LOCAL_RATE", "1.67")))
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level configuration aggregation."""
 
@@ -134,6 +143,7 @@ class AppConfig:
     cost_limits: BudgetLimits = field(default_factory=lambda: BudgetLimits(50.0, 600.0, 12000.0))
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     admin_auth: AdminAuthConfig = field(default_factory=AdminAuthConfig)
+    currency: CurrencyConfig = field(default_factory=CurrencyConfig)
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     skip_create_all: bool = bool(int(os.getenv("SKIP_CREATE_ALL", "0")))
 

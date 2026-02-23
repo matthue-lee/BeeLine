@@ -24,6 +24,8 @@ function CostSection() {
     return <div className="card">Failed to load cost metrics: {query.error?.message}</div>;
   }
 
+  const currencySymbol = "NZ$";
+
   return (
     <div className="stack">
       <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -58,7 +60,7 @@ function CostSection() {
                 <td>{row.model}</td>
                 <td>{row.calls}</td>
                 <td>{row.tokens}</td>
-                <td>${row.cost_usd.toFixed(4)}</td>
+                <td>{formatCurrency(row.cost_local ?? row.cost_usd, currencySymbol)}</td>
               </tr>
             ))}
           </tbody>
@@ -84,7 +86,7 @@ function CostSection() {
                 <td>{row.operation}</td>
                 <td>{row.total_calls}</td>
                 <td>{row.total_tokens}</td>
-                <td>${row.total_cost_usd.toFixed(4)}</td>
+                <td>{formatCurrency(row.total_cost_local ?? row.total_cost_usd, currencySymbol)}</td>
               </tr>
             ))}
           </tbody>
@@ -92,6 +94,11 @@ function CostSection() {
       </div>
     </div>
   );
+}
+
+function formatCurrency(value: number | null | undefined, symbol: string) {
+  if (value === null || value === undefined) return "—";
+  return `${symbol}${value.toFixed(4)}`;
 }
 
 export default CostSection;

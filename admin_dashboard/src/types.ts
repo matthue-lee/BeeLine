@@ -41,6 +41,7 @@ export interface LLMOutputs {
   prompt_version: string | null;
   tokens_used: number | null;
   cost_usd: number | null;
+  cost_local: number | null;
   summary: {
     short: string;
     why_it_matters: string | null;
@@ -124,6 +125,7 @@ export interface IngestionRunRecord {
   updated: number;
   skipped: number;
   failed: number;
+  recent_releases?: Array<{ release_id: string; title: string }>;
 }
 
 export interface SystemOverviewResponse {
@@ -235,12 +237,14 @@ export interface JobRunsResponse {
 export interface CostSummaryResponse {
   hours: number;
   since: string;
+  currency: string;
   aggregates: Array<{
     operation: string;
     model: string;
     calls: number;
     tokens: number;
     cost_usd: number;
+    cost_local: number | null;
   }>;
   daily_totals: Array<{
     date: string;
@@ -248,6 +252,7 @@ export interface CostSummaryResponse {
     total_calls: number;
     total_tokens: number;
     total_cost_usd: number;
+    total_cost_local: number | null;
   }>;
 }
 
@@ -259,12 +264,16 @@ export interface LlmCallRecord {
   completion_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  cost_local: number | null;
   latency_ms: number | null;
   created_at: string | null;
+  summary_input?: string | null;
+  summary_output?: Record<string, unknown> | null;
 }
 
 export interface LlmCallsResponse {
   items: LlmCallRecord[];
+  currency: string;
   limit: number;
 }
 
@@ -277,9 +286,13 @@ export interface SummariesResponse {
     model: string;
     verification_score: number | null;
     cost_usd: number | null;
+    cost_local: number | null;
     tokens_used: number | null;
+    summary_input?: string | null;
+    summary_output?: Record<string, unknown> | null;
     created_at: string | null;
   }>;
+  currency: string;
   limit: number;
 }
 

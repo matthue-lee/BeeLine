@@ -46,7 +46,13 @@ def test_repository_sets_status_ok(tmp_path):
         fetched_at=datetime.now(timezone.utc),
         content="<p>" + "word " * 50 + "</p>",
     )
-    cleaned = CleanResult(text="word " * 50, word_count=50, removed_sections=["div.share"], excerpt="word")
+    cleaned = CleanResult(
+        text="word " * 50,
+        word_count=50,
+        removed_sections=["div.share"],
+        excerpt="word",
+        metadata={"ministers": ["Hon Example"], "tags": ["Economy"]},
+    )
 
     document, inserted = repo.upsert(entry, fetch, cleaned)
 
@@ -55,6 +61,10 @@ def test_repository_sets_status_ok(tmp_path):
     assert document.word_count == 50
     assert document.provenance["clean_word_count"] == 50
     assert document.provenance.get("cleaner_removed_sections") == ["div.share"]
+    assert document.provenance.get("page_ministers") == ["Hon Example"]
+    assert document.provenance.get("page_tags") == ["Economy"]
+    assert document.minister == "Hon Example"
+    assert document.ministers == ["Hon Example"]
 
 
 def test_repository_partial_when_summary_only(tmp_path):

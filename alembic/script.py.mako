@@ -1,17 +1,15 @@
 """${message}"""
 
-revision = ${repr(revision)}
+from alembic import op
+import sqlalchemy as sa
+
+revision = ${repr(up_revision)}
 down_revision = ${repr(down_revision)}
 branch_labels = ${repr(branch_labels)}
 depends_on = ${repr(depends_on)}
 
-from alembic import op
-import sqlalchemy as sa
-
-
 def upgrade() -> None:
-    pass
-
+    ${upgrades if upgrades else "pass"}
 
 def downgrade() -> None:
-    pass
+    ${downgrades if downgrades else "pass"}

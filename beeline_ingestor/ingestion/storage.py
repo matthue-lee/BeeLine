@@ -55,6 +55,7 @@ class ReleaseRepository:
                 fetched_at=fetch.fetched_at if fetch else datetime.now(timezone.utc),
                 provenance=self._build_provenance(entry, fetch, cleaned),
             )
+            self._apply_clean_metadata(document, cleaned)
             session.add(document)
             return document, True
 
@@ -84,6 +85,7 @@ class ReleaseRepository:
 
         document.status = self._derive_status(fetch, cleaned)
         document.provenance = self._build_provenance(entry, fetch, cleaned, existing=document.provenance)
+        self._apply_clean_metadata(document, cleaned)
 
     def _derive_status(self, fetch: FetchResult | None, cleaned: CleanResult) -> DocumentStatus:
         """Determine document status based on fetch and cleaning results."""
@@ -141,6 +143,20 @@ class ReleaseRepository:
             if fetch.incapsula_detected:
                 provenance["incapsula_detected"] = True
         return provenance
+
+    def _apply_clean_metadata(self, document: ReleaseDocument, cleaned: CleanResult) -> None:
+        if not cleaned.metadata:
+            return
+        if document.provenance is None:
+            document.provenance = {}
+        metadata = cleaned.metadata
+        if metadata.get("ministers"):
+            document.provenance["page_ministers"] = metadata["ministers"]
+            document.ministers = metadata["ministers"]
+            if metadata["ministers"]:
+                document.minister = metadata["ministers"][0]
+        if metadata.get("tags"):
+            document.provenance["page_tags"] = metadata["tags"]
 
     def count_documents(self) -> int:
         """Return the total number of release documents currently stored."""

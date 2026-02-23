@@ -63,6 +63,7 @@ class ReleaseDocument(Base):
     url: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     minister: Mapped[Optional[str]] = mapped_column(String)
+    ministers: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list)
     portfolio: Mapped[Optional[str]] = mapped_column(String)
     categories: Mapped[Optional[list[str]]] = mapped_column(JSON, default=list)
     text_raw: Mapped[Optional[str]] = mapped_column(Text)

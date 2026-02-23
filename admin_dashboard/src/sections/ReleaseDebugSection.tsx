@@ -191,8 +191,8 @@ function LLMOutputsCard({ payload }: { payload: LLMOutputs | null }) {
               <dd>{payload.prompt_version || "—"}</dd>
               <dt>Tokens</dt>
               <dd>{payload.tokens_used ?? "—"}</dd>
-              <dt>Cost (USD)</dt>
-              <dd>{payload.cost_usd ? `$${payload.cost_usd.toFixed(4)}` : "—"}</dd>
+              <dt>Cost (NZD)</dt>
+              <dd>{formatCurrency(payload.cost_local ?? payload.cost_usd)}</dd>
             </dl>
             <div className="snippet">
               <strong>Summary</strong>
@@ -334,6 +334,13 @@ function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+const CURRENCY_SYMBOL = "NZ$";
+
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—";
+  return `${CURRENCY_SYMBOL}${value.toFixed(4)}`;
 }
 
 function formatScore(value: number | null) {

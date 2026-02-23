@@ -21,6 +21,7 @@ class CleanResult:
     word_count: int
     excerpt: Optional[str] = None
     removed_sections: list[str] = field(default_factory=list)
+    metadata: dict[str, list[str]] = field(default_factory=dict)
 
 
 class ContentCleaner:
@@ -43,6 +44,19 @@ class ContentCleaner:
             re.compile(r"Media Contact", re.IGNORECASE),
             re.compile(r"ENDS$", re.IGNORECASE),
         ]
+        self.metadata_selectors = {
+            "ministers": [
+                "div.field--name-field-minister",
+                "div.field--name-field-ministers",
+                "div.field--name-field-associated-ministers",
+            ],
+            "tags": [
+                "div.field--name-field-tags",
+                "div.field--name-field-category",
+                "div.field--name-field-categories",
+                "div.tags",
+            ],
+        }
 
     def clean(self, html: Optional[str]) -> CleanResult:
         """Return cleaned content and word count from HTML input."""
@@ -60,6 +74,16 @@ class ContentCleaner:
             article_node = max(candidates, key=lambda c: len(c.get_text(" ").strip()), default=soup)
 
         removed_sections: list[str] = []
+        metadata: dict[str, list[str]] = {}
+        for key, selectors in self.metadata_selectors.items():
+            items: list[str] = []
+            for selector in selectors:
+                for node in article_node.select(selector):
+                    items.extend(_extract_items(node))
+                    removed_sections.append(selector)
+                    node.decompose()
+            if items:
+                metadata[key] = items
         for selector in self.removal_selectors:
             for node in article_node.select(selector):
                 removed_sections.append(selector)
@@ -77,7 +101,13 @@ class ContentCleaner:
         excerpt = None
         if text:
             excerpt = text.split(PARAGRAPH_SEP)[0][:400]
-        return CleanResult(text=text if text else None, word_count=word_count, excerpt=excerpt, removed_sections=removed_sections)
+        return CleanResult(
+            text=text if text else None,
+            word_count=word_count,
+            excerpt=excerpt,
+            removed_sections=removed_sections,
+            metadata=metadata,
+        )
 
     def _strip_footer(self, value: str) -> str:
         lines = [line.strip() for line in value.splitlines() if line.strip()]
@@ -98,3 +128,15 @@ def _normalise_whitespace(value: str) -> str:
     # Collapse multiple spaces.
     value = re.sub(r"[ \t]{2,}", " ", value)
     return value.strip()
+
+
+def _extract_items(node) -> list[str]:
+    items: list[str] = []
+    for child in node.select(".field__item"):
+        text = child.get_text(" ", strip=True)
+        if text:
+            items.append(text)
+    if items:
+        return items
+    text = node.get_text(" ", strip=True)
+    return [text] if text else []

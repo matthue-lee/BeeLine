@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import time
 
-from flask import Flask, Response, jsonify, request, g
+from flask import Flask, Response, jsonify, request, g, current_app
 from sqlalchemy import func, select
 
 from .admin import AdminAuthService, create_admin_blueprint
@@ -30,7 +30,9 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
     email_sender = EmailSender(app_config.smtp)
     admin_auth_service = AdminAuthService(app_config.admin_auth, app.pipeline.database, email_sender=email_sender)
     app.extensions["admin_auth_service"] = admin_auth_service
-    app.register_blueprint(create_admin_blueprint(admin_auth_service, app.pipeline.database))
+    app.register_blueprint(
+        create_admin_blueprint(admin_auth_service, app.pipeline.database, app_config)
+    )
     init_sentry(
         app_config.sentry_dsn,
         environment=app_config.sentry_environment,
@@ -307,6 +309,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
             hours = 24
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+        currency = app.config["APP_CONFIG"].currency
         with app.pipeline.database.session() as session:  # type: ignore[attr-defined]
             agg_stmt = (
                 select(
@@ -328,6 +331,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
         payload = {
             "hours": hours,
             "since": since.isoformat(),
+            "currency": currency.code,
             "aggregates": [
                 {
                     "operation": row.operation,
@@ -335,6 +339,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
                     "calls": row.calls or 0,
                     "tokens": int(row.tokens or 0),
                     "cost_usd": float(row.cost_usd or 0),
+                    "cost_local": _convert_cost(float(row.cost_usd or 0), currency),
                 }
                 for row in aggregates
             ],
@@ -345,6 +350,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
                     "total_calls": daily.total_calls,
                     "total_tokens": daily.total_tokens,
                     "total_cost_usd": daily.total_cost_usd,
+                    "total_cost_local": _convert_cost(daily.total_cost_usd, currency),
                 }
                 for daily in daily_rows
             ],
@@ -357,6 +363,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
 def _serialize_summary(summary: Summary | None) -> Any:
     if not summary:
         return None
+    currency = current_app.config.get("APP_CONFIG").currency if current_app else None
     return {
         "summary_short": summary.summary_short,
         "summary_why_matters": summary.summary_why_matters,
@@ -365,9 +372,17 @@ def _serialize_summary(summary: Summary | None) -> Any:
         "prompt_version": summary.prompt_version,
         "verification_score": summary.verification_score,
         "cost_usd": summary.cost_usd,
+        "cost_local": _convert_cost(summary.cost_usd, currency),
+        "currency": currency.code if currency else "USD",
         "tokens_used": summary.tokens_used,
         "raw_response": summary.raw_response,
     }
+
+
+def _convert_cost(amount: float | None, currency) -> float | None:
+    if amount is None or not currency:
+        return amount
+    return round(amount * currency.usd_to_local_rate, 4)
     @app.before_request
     def _start_timer() -> None:
         g._request_start = time.perf_counter()

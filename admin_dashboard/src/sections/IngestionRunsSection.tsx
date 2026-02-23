@@ -38,23 +38,36 @@ function IngestionRunsSection() {
             <th>Failed</th>
           </tr>
         </thead>
-        <tbody>
-          {rows.map((run) => (
-            <tr key={run.id}>
-              <td>{run.id}</td>
-              <td>{run.status}</td>
-              <td>{run.source}</td>
-              <td>{formatDate(run.started_at)}</td>
-              <td>{formatDate(run.finished_at)}</td>
-              <td>{run.inserted}</td>
-              <td>{run.updated}</td>
-              <td>{run.skipped}</td>
-              <td>{run.failed}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          <tbody>
+            {rows.map((run) => (
+              <tr key={run.id}>
+                <td>{run.id}</td>
+                <td>{run.status}</td>
+                <td>{run.source}</td>
+                <td>{formatDate(run.started_at)}</td>
+                <td>{formatDate(run.finished_at)}</td>
+                <td>{run.inserted}</td>
+                <td>{run.updated}</td>
+                <td>{run.skipped}</td>
+                <td>{run.failed}</td>
+                <td>
+                  {run.recent_releases?.map((rel) => (
+                    <div key={rel.release_id}>
+                      {rel.title}
+                      <button
+                        style={{ marginLeft: "0.5rem" }}
+                        onClick={() => navigator.clipboard.writeText(rel.release_id)}
+                      >
+                        Copy ID
+                      </button>
+                    </div>
+                  )) || "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
   );
 }
 

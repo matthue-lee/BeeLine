@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request, current_app, g
 from sqlalchemy import func, select
 
 from ..db import Database
+from ..config import AppConfig
 from ..models import (
     AdminRole,
     Claim,
@@ -37,8 +38,13 @@ from .auth import AdminAuthService
 RELEASE_INGEST_JOB = "release_ingest"
 
 
-def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -> Blueprint:
+def create_admin_blueprint(
+    auth_service: AdminAuthService,
+    database: Database,
+    config: AppConfig,
+) -> Blueprint:
     bp = Blueprint("admin_api", __name__, url_prefix="/api/admin")
+    currency = config.currency
 
     def require_admin(role: Optional[AdminRole] = None) -> Callable:
         def decorator(func: Callable) -> Callable:
@@ -383,10 +389,24 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
     @require_admin()
     def list_ingestion_runs() -> dict:
         limit = min(int(request.args.get("limit", 25)), 100)
+        runs = []
         with database.session() as session:
             stmt = select(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(limit)
-            rows = session.execute(stmt).scalars().all()
-        return {"items": [_serialize_ingestion_run(run) for run in rows], "limit": limit}
+            base = session.execute(stmt).scalars().all()
+            for run in base:
+                release_rows = session.execute(
+                    select(ReleaseDocument.id, ReleaseDocument.title)
+                    .where(ReleaseDocument.created_at >= run.started_at)
+                    .order_by(ReleaseDocument.created_at.desc())
+                    .limit(5)
+                ).all()
+                payload = _serialize_ingestion_run(run) or {}
+                payload["recent_releases"] = [
+                    {"release_id": rid, "title": title}
+                    for rid, title in release_rows
+                ]
+                runs.append(payload)
+        return {"items": runs, "limit": limit}
 
     @bp.route("/releases/<release_id>/debug", methods=["GET"])
     @require_admin()
@@ -458,7 +478,7 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
         payload = {
             "release": _serialize_release(release),
             "ingestion": _serialize_ingest_metadata(release, job_row),
-            "llm_outputs": _serialize_summary(summary),
+            "llm_outputs": _serialize_summary(summary, currency),
             "verification": {"claims": claims_debug},
             "entity_snapshot": entity_snapshot,
             "cross_links": cross_links,
@@ -540,6 +560,7 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
         return {
             "hours": hours,
             "since": since.isoformat(),
+            "currency": currency.code,
             "aggregates": [
                 {
                     "operation": row.operation,
@@ -547,6 +568,7 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
                     "calls": row.calls or 0,
                     "tokens": int(row.tokens or 0),
                     "cost_usd": float(row.cost_usd or 0.0),
+                    "cost_local": _cost_local(float(row.cost_usd or 0.0), currency),
                 }
                 for row in aggregates
             ],
@@ -557,6 +579,7 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
                     "total_calls": item.total_calls,
                     "total_tokens": item.total_tokens,
                     "total_cost_usd": item.total_cost_usd,
+                    "total_cost_local": _cost_local(item.total_cost_usd, currency),
                 }
                 for item in daily_totals
             ],
@@ -572,6 +595,12 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
                 .scalars()
                 .all()
             )
+            summary_map: dict[int, Summary] = {}
+            summary_ids = [call.summary_id for call in rows if getattr(call, "summary_id", None)]
+            if summary_ids:
+                stmt = select(Summary).where(Summary.id.in_(summary_ids))
+                for summary in session.execute(stmt).scalars():
+                    summary_map[summary.id] = summary
         return {
             "items": [
                 {
@@ -582,11 +611,15 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
                     "completion_tokens": call.completion_tokens,
                     "total_tokens": call.total_tokens,
                     "cost_usd": call.cost_usd,
+                    "cost_local": _cost_local(call.cost_usd, currency),
                     "latency_ms": call.latency_ms,
                     "created_at": call.created_at.isoformat() if call.created_at else None,
+                    "summary_input": summary_map.get(getattr(call, "summary_id", None)).metadata.get("input") if summary_map.get(getattr(call, "summary_id", None)) and summary_map.get(getattr(call, "summary_id", None)).metadata else None,
+                    "summary_output": summary_map.get(getattr(call, "summary_id", None)).raw_response if summary_map.get(getattr(call, "summary_id", None)) else None,
                 }
                 for call in rows
             ],
+            "currency": currency.code,
             "limit": limit,
         }
 
@@ -611,12 +644,13 @@ def create_admin_blueprint(auth_service: AdminAuthService, database: Database) -
                 "model": summary.model,
                 "verification_score": summary.verification_score,
                 "cost_usd": summary.cost_usd,
+                "cost_local": _cost_local(summary.cost_usd, currency),
                 "tokens_used": summary.tokens_used,
                 "created_at": summary.created_at.isoformat() if summary.created_at else None,
             }
             for summary, release in rows
         ]
-        return {"items": items, "limit": limit}
+        return {"items": items, "limit": limit, "currency": currency.code}
 
     def _extract_bearer_token() -> str:
         header = request.headers.get("Authorization", "")
@@ -685,7 +719,7 @@ def _serialize_ingest_metadata(release: ReleaseDocument, job_run: JobRun | None)
     }
 
 
-def _serialize_summary(summary: Summary | None) -> dict[str, Any] | None:
+def _serialize_summary(summary: Summary | None, currency) -> dict[str, Any] | None:
     if not summary:
         return None
     return {
@@ -693,6 +727,7 @@ def _serialize_summary(summary: Summary | None) -> dict[str, Any] | None:
         "prompt_version": summary.prompt_version,
         "tokens_used": summary.tokens_used,
         "cost_usd": summary.cost_usd,
+        "cost_local": _cost_local(summary.cost_usd, currency),
         "summary": {
             "short": summary.summary_short,
             "why_it_matters": summary.summary_why_matters,
@@ -927,3 +962,9 @@ def _extract_snippet(text: str, sentences: int = 2) -> str | None:
 
 def _isoformat(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
+
+
+def _cost_local(amount: float | None, currency) -> float | None:
+    if amount is None:
+        return None
+    return round(amount * currency.usd_to_local_rate, 4)
