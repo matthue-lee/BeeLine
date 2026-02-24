@@ -1,12 +1,16 @@
-export interface BaseJobData extends Record<string, unknown> {
-  releaseId?: string;
-  payload?: Record<string, unknown>;
-}
+import type {
+  IngestJobPayload,
+  SummarizeJobPayload,
+  VerifyJobPayload,
+  EmbedJobPayload,
+  LinkJobPayload,
+  EntityExtractJobPayload
+} from '../queues/payloads';
 
-export interface SummarizeJobData extends BaseJobData {
-  releaseId: string;
-}
-
-export interface IngestJobData extends BaseJobData {
-  feedUrl?: string;
-}
+export type BaseJobData = Record<string, unknown>;
+export type SummarizeJobData = SummarizeJobPayload;
+export type IngestJobData = IngestJobPayload;
+export type VerifyJobData = VerifyJobPayload;
+export type EmbedJobData = EmbedJobPayload;
+export type LinkJobData = LinkJobPayload;
+export type EntityExtractJobData = EntityExtractJobPayload;

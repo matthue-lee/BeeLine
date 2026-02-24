@@ -251,6 +251,17 @@ class EntityStatistic(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class JobStage(str, enum.Enum):
+    """Logical stage for queued jobs."""
+
+    INGEST = "ingest"
+    SUMMARIZE = "summarize"
+    VERIFY = "verify"
+    EMBED = "embed"
+    LINK = "link"
+    ENTITY_EXTRACT = "entity_extract"
+
+
 class JobRun(Base):
     """Operational record for asynchronous jobs."""
 
@@ -258,6 +269,11 @@ class JobRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage: Mapped[Optional[JobStage]] = mapped_column(Enum(JobStage), nullable=True)
+    release_id: Mapped[Optional[str]] = mapped_column(String(128), ForeignKey("releases.id", ondelete="SET NULL"))
+    article_id: Mapped[Optional[str]] = mapped_column(String(128), ForeignKey("news_articles.id", ondelete="SET NULL"))
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    trigger_job_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("job_runs.id", ondelete="SET NULL"))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     params: Mapped[Optional[dict]] = mapped_column(JSON)
     result: Mapped[Optional[dict]] = mapped_column(JSON)
@@ -275,7 +291,11 @@ class FailedJob(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_run_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("job_runs.id", ondelete="SET NULL"))
     job_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    stage: Mapped[Optional[JobStage]] = mapped_column(Enum(JobStage), nullable=True)
+    release_id: Mapped[Optional[str]] = mapped_column(String(128), ForeignKey("releases.id", ondelete="SET NULL"))
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    payload_snapshot: Mapped[Optional[dict]] = mapped_column(JSON)
+    bullmq_job_id: Mapped[Optional[str]] = mapped_column(String(128))
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=3)

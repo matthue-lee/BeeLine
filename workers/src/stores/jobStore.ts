@@ -4,6 +4,18 @@ export interface JobPayload {
   [key: string]: unknown;
 }
 
+export interface JobRunMetadata {
+  stage?: string;
+  releaseId?: string;
+  articleId?: string;
+  priority?: number;
+  triggerJobId?: number | null;
+}
+
+export interface JobRunFailureMetadata extends JobRunMetadata {
+  bullmqJobId?: string;
+}
+
 export class JobStore {
   private pool: Pool;
 
@@ -11,12 +23,17 @@ export class JobStore {
     this.pool = new Pool({ connectionString: dbUrl });
   }
 
-  async recordRunStart(jobType: string, payload: JobPayload): Promise<number> {
+  async recordRunStart(
+    jobType: string,
+    payload: JobPayload,
+    metadata: JobRunMetadata = {}
+  ): Promise<number> {
+    const { stage, releaseId, articleId, priority = 0, triggerJobId } = metadata;
     const result = await this.pool.query(
-      `INSERT INTO job_runs (job_type, status, params, started_at)
-       VALUES ($1, 'running', $2, NOW())
+      `INSERT INTO job_runs (job_type, stage, release_id, article_id, priority, trigger_job_id, status, params, started_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, NOW())
        RETURNING id`,
-      [jobType, payload]
+      [jobType, stage, releaseId, articleId, priority, triggerJobId, payload]
     );
     return result.rows[0].id as number;
   }
@@ -36,8 +53,10 @@ export class JobStore {
     error: Error,
     attemptsMade: number,
     maxAttempts: number,
-    durationMs: number
+    durationMs: number,
+    metadata: JobRunFailureMetadata = {}
   ): Promise<void> {
+    const { stage, releaseId, bullmqJobId } = metadata;
     await this.pool.query(
       `UPDATE job_runs SET status='failed', error_message=$1, finished_at=NOW(), duration_ms=$2
        WHERE id=$3`,
@@ -46,9 +65,20 @@ export class JobStore {
 
     if (attemptsMade >= maxAttempts) {
       await this.pool.query(
-        `INSERT INTO failed_jobs (job_run_id, job_type, payload, error_message, retry_count, max_retries, failed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [runId, jobType, payload, error.message, attemptsMade, maxAttempts]
+        `INSERT INTO failed_jobs (job_run_id, job_type, stage, release_id, payload, payload_snapshot, error_message, retry_count, max_retries, bullmq_job_id, failed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+        [
+          runId,
+          jobType,
+          stage,
+          releaseId,
+          payload,
+          payload,
+          error.message,
+          attemptsMade,
+          maxAttempts,
+          bullmqJobId
+        ]
       );
     }
   }
