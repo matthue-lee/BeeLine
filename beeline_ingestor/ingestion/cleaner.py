@@ -4,9 +4,12 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from bs4 import BeautifulSoup
+
+from ..utils import parse_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +52,34 @@ class ContentCleaner:
                 "div.field--name-field-minister",
                 "div.field--name-field-ministers",
                 "div.field--name-field-associated-ministers",
+                "div.field.minister__title",
+                ".minister__title",
             ],
             "tags": [
                 "div.field--name-field-tags",
                 "div.field--name-field-category",
                 "div.field--name-field-categories",
                 "div.tags",
+                ".tag--portfolio",
+                ".meta__tags",
             ],
         }
+        self.date_selectors = [
+            "div.field--name-field-date",
+            "div.field--name-field-release-date",
+            "div.field--name-field-date-of-release",
+            "div.release-info__date",
+            "div.release-date",
+            "p.release-date",
+            "span.date-display-single",
+            "time.meta__date",
+        ]
+        self.date_meta_attributes = [
+            {"property": "article:published_time"},
+            {"property": "og:published_time"},
+            {"name": "dcterms.available"},
+            {"name": "DC.date.issued"},
+        ]
 
     def clean(self, html: Optional[str]) -> CleanResult:
         """Return cleaned content and word count from HTML input."""
@@ -75,6 +98,9 @@ class ContentCleaner:
 
         removed_sections: list[str] = []
         metadata: dict[str, list[str]] = {}
+        published_at = self._extract_published_at(article_node, soup)
+        if published_at:
+            metadata["published_at"] = [published_at.isoformat()]
         for key, selectors in self.metadata_selectors.items():
             items: list[str] = []
             for selector in selectors:
@@ -114,6 +140,30 @@ class ContentCleaner:
         while lines and any(pattern.search(lines[-1]) for pattern in self.footer_patterns):
             lines.pop()
         return PARAGRAPH_SEP.join(lines)
+
+    def _extract_published_at(self, article_node, soup) -> datetime | None:
+        """Detect the published timestamp from page metadata."""
+
+        for attrs in self.date_meta_attributes:
+            tag = soup.find("meta", attrs=attrs)
+            value = tag.get("content") if tag else None
+            parsed = parse_datetime(value)
+            if parsed:
+                return parsed
+
+        for selector in ("time[datetime]", "time[itemprop='datePublished']", "time[property='article:published_time']"):
+            for node in article_node.select(selector):
+                parsed = parse_datetime(node.get("datetime"))
+                if parsed:
+                    return parsed
+
+        for selector in self.date_selectors:
+            for node in article_node.select(selector):
+                text = node.get_text(" ", strip=True)
+                parsed = parse_datetime(text)
+                if parsed:
+                    return parsed
+        return None
 
 
 def _normalise_whitespace(value: str) -> str:

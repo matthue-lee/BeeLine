@@ -17,16 +17,49 @@ from .circuit_breaker import CircuitBreaker, BudgetLimits, CircuitOpenError
 
 @dataclass(slots=True)
 class ModelPricing:
+    """Model pricing in USD per 1k tokens."""
     prompt_cost_per_1k: float
     completion_cost_per_1k: float
+    cached_prompt_cost_per_1k: float = 0.0
 
 
+def _per_million_to_per_1k(x: float) -> float:
+    """Convert $/1M tokens to $/1k tokens."""
+    return x / 1000.0
+
+
+# Minimal sensible set (no images):
+# - gpt-5-nano: ultra-cheap routing/classification
+# - gpt-5-mini: cheap workhorse
+# - gpt-5: high-quality general
+# - gpt-4o-mini: cheap UI/chat/fallback
+# - o3: mid-priced reasoning specialist
 DEFAULT_MODEL_PRICING: dict[str, ModelPricing] = {
-    "gpt-4o-mini": ModelPricing(prompt_cost_per_1k=0.003, completion_cost_per_1k=0.006),
-    "gpt-4o": ModelPricing(prompt_cost_per_1k=0.01, completion_cost_per_1k=0.03),
-    "gpt-4o-mini-translate": ModelPricing(prompt_cost_per_1k=0.002, completion_cost_per_1k=0.004),
-    "text-embedding-3-small": ModelPricing(prompt_cost_per_1k=0.00002, completion_cost_per_1k=0.0),
-    "text-embedding-3-large": ModelPricing(prompt_cost_per_1k=0.00013, completion_cost_per_1k=0.0),
+    "gpt-5-nano": ModelPricing(
+        prompt_cost_per_1k=_per_million_to_per_1k(0.05),
+        cached_prompt_cost_per_1k=_per_million_to_per_1k(0.005),
+        completion_cost_per_1k=_per_million_to_per_1k(0.40),
+    ),
+    "gpt-5-mini": ModelPricing(
+        prompt_cost_per_1k=_per_million_to_per_1k(0.25),
+        cached_prompt_cost_per_1k=_per_million_to_per_1k(0.025),
+        completion_cost_per_1k=_per_million_to_per_1k(2.00),
+    ),
+    "gpt-5": ModelPricing(
+        prompt_cost_per_1k=_per_million_to_per_1k(1.25),
+        cached_prompt_cost_per_1k=_per_million_to_per_1k(0.125),
+        completion_cost_per_1k=_per_million_to_per_1k(10.00),
+    ),
+    "gpt-4o-mini": ModelPricing(
+        prompt_cost_per_1k=_per_million_to_per_1k(0.15),
+        cached_prompt_cost_per_1k=_per_million_to_per_1k(0.075),
+        completion_cost_per_1k=_per_million_to_per_1k(0.60),
+    ),
+    "o3": ModelPricing(
+        prompt_cost_per_1k=_per_million_to_per_1k(2.00),
+        cached_prompt_cost_per_1k=_per_million_to_per_1k(0.50),
+        completion_cost_per_1k=_per_million_to_per_1k(8.00),
+    ),
 }
 
 
@@ -39,6 +72,7 @@ class CostTracker:
         self.redis: redis.Redis | None = None
         if self.redis_url:
             self.redis = redis.Redis.from_url(self.redis_url, decode_responses=True)
+
         breaker_enabled = os.getenv("ENABLE_COST_BREAKER", "1") == "1"
         self.breaker: CircuitBreaker | None = None
         if breaker_enabled and self.redis_url:
@@ -49,6 +83,9 @@ class CostTracker:
             )
             self.breaker = CircuitBreaker("cost", redis_url=self.redis_url, limits=limits)
 
+        # Optional overrides via env var.
+        # Format: {"model-name": {"prompt": 0.001, "completion": 0.002, "cached_prompt": 0.0001}}
+        # Values are USD per 1k tokens.
         pricing_override = os.getenv("MODEL_PRICING_JSON")
         if pricing_override:
             try:
@@ -58,6 +95,7 @@ class CostTracker:
                     self.model_pricing[model] = ModelPricing(
                         prompt_cost_per_1k=float(prices["prompt"]),
                         completion_cost_per_1k=float(prices.get("completion", prices["prompt"])),
+                        cached_prompt_cost_per_1k=float(prices.get("cached_prompt", 0.0)),
                     )
             except json.JSONDecodeError:
                 self.model_pricing = DEFAULT_MODEL_PRICING
@@ -74,14 +112,22 @@ class CostTracker:
         latency_ms: int,
         job_run_id: Optional[int] = None,
         cost_usd_override: Optional[float] = None,
+        cached_prompt_tokens: int = 0,
     ) -> float:
         """Persist call metadata and update aggregates."""
 
         if self.breaker:
             self.breaker.ensure_can_proceed(operation)
-        cost_usd = cost_usd_override or self._estimate_cost(model, prompt_tokens, completion_tokens)
+
+        cost_usd = cost_usd_override or self._estimate_cost(
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_prompt_tokens=cached_prompt_tokens,
+        )
         total_tokens = prompt_tokens + completion_tokens
         created_at = datetime.now(timezone.utc)
+
         with self.database.session() as session:
             call = LLMCall(
                 job_run_id=job_run_id,
@@ -95,11 +141,14 @@ class CostTracker:
             )
             session.add(call)
             self._upsert_daily_cost(session, created_at.date(), operation, cost_usd, total_tokens)
+
         self._increment_redis_counters(operation, cost_usd, created_at)
+
         if self.breaker:
             status = self.breaker.register_cost(operation, cost_usd)
             if status == "open":
                 raise CircuitOpenError(operation, f"Breaker opened for {operation}")
+
         return cost_usd
 
     def record_external_call(
@@ -126,20 +175,40 @@ class CostTracker:
             )
             session.add(call)
             self._upsert_daily_cost(session, datetime.now(timezone.utc).date(), operation, cost_usd, 0)
+
         now = datetime.now(timezone.utc)
         self._increment_redis_counters(operation, cost_usd, now)
+
         if self.breaker:
             status = self.breaker.register_cost(operation, cost_usd)
             if status == "open":
                 raise CircuitOpenError(operation, f"Breaker opened for {operation}")
 
-    def _estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    def _estimate_cost(
+        self,
+        model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        cached_prompt_tokens: int = 0,
+    ) -> float:
         pricing = self.model_pricing.get(model)
         if not pricing:
             return 0.0
-        prompt_cost = (prompt_tokens / 1000) * pricing.prompt_cost_per_1k
-        completion_cost = (completion_tokens / 1000) * pricing.completion_cost_per_1k
-        return round(prompt_cost + completion_cost, 6)
+
+        # Clamp to avoid negative values
+        prompt = max(0, int(prompt_tokens))
+        completion = max(0, int(completion_tokens))
+        cached = max(0, int(cached_prompt_tokens))
+
+        # If cached tokens are reported, they are typically a subset of prompt tokens.
+        # Avoid double charging by billing (prompt - cached) at prompt rate.
+        billable_prompt = max(0, prompt - cached)
+
+        prompt_cost = (billable_prompt / 1000) * pricing.prompt_cost_per_1k
+        cached_cost = (cached / 1000) * pricing.cached_prompt_cost_per_1k
+        completion_cost = (completion / 1000) * pricing.completion_cost_per_1k
+
+        return round(prompt_cost + cached_cost + completion_cost, 6)
 
     def _upsert_daily_cost(
         self,

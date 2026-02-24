@@ -133,8 +133,10 @@ services:
       CURRENCY_CODE: ${CURRENCY_CODE:-NZD}
       CURRENCY_SYMBOL: ${CURRENCY_SYMBOL:-NZ$}
       USD_TO_LOCAL_RATE: ${USD_TO_LOCAL_RATE:-1.67}
-      OPENAI_SECRET_KEY: ${OPENAI_SECRET_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_ORGANIZATION_ID: ${OPENAI_ORGANIZATION_ID:-}
+      OPENAI_PROJECT_ID: ${OPENAI_PROJECT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

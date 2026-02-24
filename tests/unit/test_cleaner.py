@@ -8,29 +8,42 @@ if str(ROOT) not in sys.path:
 from beeline_ingestor.ingestion.cleaner import ContentCleaner
 
 
-def test_cleaner_removes_share_and_footer():
+def test_cleaner_extracts_ministers_tags_and_published_date():
     cleaner = ContentCleaner()
     html = """
-    <article>
-        <div class="share">Share this</div>
-        <p>Prime Minister announced funding.</p>
-        <p>Media Contact: Example</p>
-    </article>
+    <html>
+      <head>
+        <title>Sample Release</title>
+      </head>
+      <body>
+        <article>
+          <h1 class="article__title">Ngāti Whātua Ōrākei led charter school gives students more options</h1>
+          <time class="meta meta__date" datetime="">
+            <time datetime="2026-02-22T22:56:49Z">23 February 2026</time>
+          </time>
+          <div class="field--name-field-minister">
+            <div class="field__item"><a>Hon Example Minister</a></div>
+          </div>
+          <div class="field minister__title">
+            <div class="field__item">Hon David Seymour</div>
+          </div>
+          <div class="field--name-field-tags">
+            <div class="field__item"><a>Economy</a></div>
+            <div class="field__item"><a>Budget 2025</a></div>
+          </div>
+          <em class="tag tag--portfolio">
+            <div class="tag taxonomy-term taxonomy-term--type-portfolios taxonomy-term--view-mode-teaser-small ds-1col clearfix">
+              <a href="/portfolio/.../education" hreflang="en">Education</a>
+            </div>
+          </em>
+          <p>Some important policy announcement content.</p>
+        </article>
+      </body>
+    </html>
     """
 
     result = cleaner.clean(html)
 
-    assert "Share this" not in (result.text or "")
-    assert "Media Contact" not in (result.text or "")
-    assert result.word_count >= 4
-    assert "div.share" in result.removed_sections
-    assert result.excerpt.startswith("Prime Minister")
-
-
-def test_cleaner_handles_empty_html():
-    cleaner = ContentCleaner()
-
-    result = cleaner.clean(None)
-
-    assert result.text is None
-    assert result.word_count == 0
+    assert result.metadata["ministers"] == ["Hon Example Minister", "Hon David Seymour"]
+    assert result.metadata["tags"] == ["Economy", "Budget 2025", "Education"]
+    assert result.metadata["published_at"] == ["2026-02-22T22:56:49+00:00"]

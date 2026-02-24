@@ -78,14 +78,28 @@ class LLMClient:
         self._client: Optional[OpenAI] = None
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
+        organization_id = os.getenv("OPENAI_ORGANIZATION_ID")
+        project_id = os.getenv("OPENAI_PROJECT_ID")
         force_mock = os.getenv("LLM_MODE", "auto").lower() == "mock"
-        self._simulate = force_mock or not api_key or OpenAI is None
-        if not self._simulate:
+        if force_mock:
+            self._simulate = True
+        else:
+            if not api_key:
+                raise RuntimeError("OPENAI_API_KEY is required for summarization; set LLM_MODE=mock to simulate")
+            if OpenAI is None:
+                raise RuntimeError("openai package not installed; install dependency or enable mock mode")
             try:
-                self._client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
-            except Exception:  # pragma: no cover - network config errors
-                logger.exception("Unable to initialise OpenAI client, falling back to simulator")
-                self._simulate = True
+                client_kwargs: dict[str, Any] = {"api_key": api_key}
+                if base_url:
+                    client_kwargs["base_url"] = base_url
+                if organization_id:
+                    client_kwargs["organization"] = organization_id
+                if project_id:
+                    client_kwargs["project"] = project_id
+                self._client = OpenAI(**client_kwargs)
+            except Exception as exc:  # pragma: no cover - network config errors
+                raise RuntimeError("Unable to initialise OpenAI client; set LLM_MODE=mock to simulate") from exc
+            self._simulate = False
 
     def summarize(
         self,

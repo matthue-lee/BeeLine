@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 try:  # pragma: no cover - optional dependency
     from openai import OpenAI
@@ -42,12 +42,21 @@ class EmbeddingService:
         self.model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         api_key = os.getenv("OPENAI_API_KEY")
         base_url = os.getenv("OPENAI_BASE_URL")
+        organization_id = os.getenv("OPENAI_ORGANIZATION_ID")
+        project_id = os.getenv("OPENAI_PROJECT_ID")
         force_mock = os.getenv("LLM_MODE", "auto").lower() == "mock"
         self._simulate = force_mock or not api_key or OpenAI is None
         self._client: Optional[OpenAI] = None
         if not self._simulate:
             try:
-                self._client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+                client_kwargs: dict[str, Any] = {"api_key": api_key}
+                if base_url:
+                    client_kwargs["base_url"] = base_url
+                if organization_id:
+                    client_kwargs["organization"] = organization_id
+                if project_id:
+                    client_kwargs["project"] = project_id
+                self._client = OpenAI(**client_kwargs)
             except Exception:  # pragma: no cover
                 logger.exception("Unable to initialise OpenAI client for embeddings; falling back to mock mode")
                 self._simulate = True

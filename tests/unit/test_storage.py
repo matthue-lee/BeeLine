@@ -151,3 +151,39 @@ def test_repository_marks_empty_parse(tmp_path):
 
     assert inserted is True
     assert document.status == DocumentStatus.EMPTY_PARSE
+
+
+def test_repository_uses_page_published_date_when_feed_missing(tmp_path):
+    config = make_config(tmp_path)
+    database = Database(config)
+    database.create_all()
+    repo = ReleaseRepository(database, config)
+
+    entry = FeedEntry(
+        id=compute_canonical_id("Dated", "https://example.com/dated"),
+        title="Dated",
+        url="https://example.com/dated",
+        published_at=None,
+        categories=["News"],
+        summary=None,
+        feed_url="https://feed",
+    )
+    fetch = FetchResult(
+        url=entry.url,
+        final_url=entry.url,
+        status_code=200,
+        fetched_at=datetime.now(timezone.utc),
+        content="<p>" + "word " * 20 + "</p>",
+    )
+    page_iso = "2025-02-02T21:00:00+00:00"
+    cleaned = CleanResult(
+        text="word " * 20,
+        word_count=20,
+        metadata={"published_at": [page_iso]},
+    )
+
+    document, inserted = repo.upsert(entry, fetch, cleaned)
+
+    assert inserted is True
+    assert document.published_at.isoformat() == page_iso
+    assert document.provenance.get("page_published_at") == page_iso

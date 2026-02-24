@@ -7,10 +7,22 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable, List, Optional
 
+try:  # pragma: no cover - optional convenience for local scripts
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - python-dotenv not installed
+    load_dotenv = None  # type: ignore[assignment]
+
 from sqlalchemy.engine import make_url
 
 from .entity_extraction.config import EntityExtractionConfig
 from .circuit_breaker import BudgetLimits
+
+
+if load_dotenv:
+    repo_root = Path(__file__).resolve().parent.parent
+    env_file = repo_root / ".env"
+    if env_file.exists():  # pragma: no cover - filesystem dependent
+        load_dotenv(env_file, override=False)
 
 
 DEFAULT_FEED = "https://www.beehive.govt.nz/releases/feed"
@@ -209,9 +221,9 @@ class AppConfig:
         database.ensure_path()
 
         breaker_limits = BudgetLimits(
-            hourly_usd=float(os.getenv("CIRCUIT_BREAKER_HOURLY_USD", "50")),
-            daily_usd=float(os.getenv("CIRCUIT_BREAKER_DAILY_USD", "600")),
-            monthly_usd=float(os.getenv("CIRCUIT_BREAKER_MONTHLY_USD", "12000")),
+            hourly_usd=float(os.getenv("CIRCUIT_BREAKER_HOURLY_USD", "10")),
+            daily_usd=float(os.getenv("CIRCUIT_BREAKER_DAILY_USD", "10")),
+            monthly_usd=float(os.getenv("CIRCUIT_BREAKER_MONTHLY_USD", "10")),
         )
 
         scheduler = SchedulerConfig(

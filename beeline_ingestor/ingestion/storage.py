@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from ..config import AppConfig
 from ..db import Database
 from ..models import DocumentStatus, ReleaseDocument
+from ..utils import parse_datetime
 from .cleaner import CleanResult
 from .fetcher import FetchResult
 from .rss import FeedEntry
@@ -157,6 +158,16 @@ class ReleaseRepository:
                 document.minister = metadata["ministers"][0]
         if metadata.get("tags"):
             document.provenance["page_tags"] = metadata["tags"]
+        if metadata.get("published_at"):
+            page_date_str = next((value for value in metadata["published_at"] if value), None)
+            if page_date_str:
+                parsed_date = parse_datetime(page_date_str)
+                if parsed_date:
+                    document.provenance["page_published_at"] = parsed_date.isoformat()
+                    if document.published_at is None:
+                        document.published_at = parsed_date
+                else:
+                    document.provenance["page_published_at_raw"] = page_date_str
 
     def count_documents(self) -> int:
         """Return the total number of release documents currently stored."""
