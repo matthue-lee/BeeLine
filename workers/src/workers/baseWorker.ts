@@ -2,10 +2,10 @@ import { Job, Worker } from 'bullmq';
 import pino from 'pino';
 import { AppConfig, QueueName } from '../config';
 import { createRedisOptions } from '../redis';
-import { JobStore, JobRunMetadata } from '../stores/jobStore';
+import { JobStore, JobRunMetadata, JobPayload } from '../stores/jobStore';
 import { recordJobFailure, recordJobSuccess } from '../metrics/registry';
 
-export abstract class BaseWorker<TPayload extends Record<string, unknown>, TResult = unknown> {
+export abstract class BaseWorker<TPayload extends object, TResult = unknown> {
   protected readonly queueName: QueueName;
   protected readonly config: AppConfig;
   protected readonly logger = pino({ name: 'worker' });
@@ -40,7 +40,8 @@ export abstract class BaseWorker<TPayload extends Record<string, unknown>, TResu
 
   private async processWrapper(job: Job<TPayload, TResult>): Promise<TResult> {
     const metadata = this.buildMetadata(job);
-    const runId = await this.jobStore.recordRunStart(this.queueName, job.data, metadata);
+    const payloadForStore = job.data as unknown as JobPayload;
+    const runId = await this.jobStore.recordRunStart(this.queueName, payloadForStore, metadata);
     const started = Date.now();
     try {
       const result = await this.process(job, runId);
@@ -53,7 +54,7 @@ export abstract class BaseWorker<TPayload extends Record<string, unknown>, TResu
       await this.jobStore.recordRunFailure(
         runId,
         this.queueName,
-        job.data,
+        payloadForStore,
         error as Error,
         job.attemptsMade ?? 1,
         job.opts.attempts ?? this.config.defaultAttempts,

@@ -78,6 +78,12 @@ class ReleaseDocument(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1)
     superseded_by: Mapped[Optional[str]] = mapped_column(String(128), ForeignKey("releases.id"))
+    # Stage statuses for decoupled pipeline (Week B)
+    summary_status: Mapped[str] = mapped_column(String(16), default="pending")
+    verify_status: Mapped[str] = mapped_column(String(16), default="pending")
+    embed_status: Mapped[str] = mapped_column(String(16), default="pending")
+    link_status: Mapped[str] = mapped_column(String(16), default="pending")
+    entity_status: Mapped[str] = mapped_column(String(16), default="pending")
 
     def has_meaningful_content(self, min_length: int) -> bool:
         """Return True when the cleaned text is long enough for downstream processing."""

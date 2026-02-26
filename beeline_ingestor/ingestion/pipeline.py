@@ -5,6 +5,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
+import os
+import hashlib
 from typing import Optional
 
 from ..config import AppConfig
@@ -13,9 +15,9 @@ from ..db import Database
 from ..embeddings import EmbeddingService
 from ..entity_extraction import EntityCanonicalizer, EntityExtractionService
 from ..entity_extraction.store import EntityStore
-from ..models import DocumentStatus, IngestionRun, Summary
+from ..models import DocumentStatus, IngestionRun, ReleaseDocument
 from ..observability import record_ingestion_metrics
-from ..summarization.service import SummaryService
+from ..queue_dispatcher import QueueDispatcher, make_idempotency_token
 from ..search.service import HybridSearchService
 from .cleaner import ContentCleaner
 from .fetcher import ArticleFetcher
@@ -79,11 +81,13 @@ class IngestionPipeline:
             except RuntimeError:
                 logger.exception("Entity extraction disabled due to initialisation failure")
                 self.entity_service = None
+        # Queue dispatcher for decoupled stages (Week B)
+        self.queue_dispatcher: QueueDispatcher | None = None
         try:
-            self.summary_service = SummaryService(config, self.database)
+            self.queue_dispatcher = QueueDispatcher()
         except Exception:
-            logger.exception("Summary service initialisation failed")
-            self.summary_service = None
+            logger.exception("Queue dispatcher initialisation failed; dispatch disabled")
+            self.queue_dispatcher = None
 
     def run(
         self,
@@ -129,22 +133,59 @@ class IngestionPipeline:
                     failed += 1
                     continue
 
-                summary = self._maybe_generate_summary(document)
-                self._run_entity_extraction(document)
-                indexed = False
-                if self.search_service:
+                # Decoupled stage dispatch: summarize, embed, entity_extract
+                text = (document.text_clean or document.text_raw or "").strip()
+                if not text:
+                    skipped += 1
+                    continue
+                if self.queue_dispatcher:
                     try:
-                        self.search_service.index_release(document, summary)
-                        indexed = True
+                        # summarize
+                        sum_token = make_idempotency_token(
+                            "summarize",
+                            release_id=document.id,
+                            prompt_version_hint=os.getenv("VERIFICATION_PROMPT_VERSION", "latest"),
+                        )
+                        self.queue_dispatcher.enqueue(
+                            "summarize",
+                            {"release_id": document.id, "idempotency_token": sum_token},
+                        )
+                        # embed
+                        text_hash = hashlib.sha256(text.encode()).hexdigest()
+                        emb_token = make_idempotency_token(
+                            "embed", source_type="release", source_id=document.id, text_hash=text_hash
+                        )
+                        self.queue_dispatcher.enqueue(
+                            "embed",
+                            {
+                                "source_type": "release",
+                                "source_id": document.id,
+                                "text_hash": text_hash,
+                                "idempotency_token": emb_token,
+                            },
+                        )
+                        # entity_extract
+                        ent_token = make_idempotency_token(
+                            "entity_extract", source_type="release", source_id=document.id
+                        )
+                        self.queue_dispatcher.enqueue(
+                            "entity_extract",
+                            {
+                                "source_type": "release",
+                                "source_id": document.id,
+                                "idempotency_token": ent_token,
+                            },
+                        )
+                        # Update stage statuses to 'queued'
+                        with self.database.session() as session:
+                            db_doc = session.get(ReleaseDocument, document.id)
+                            if db_doc:
+                                db_doc.summary_status = "queued"
+                                db_doc.embed_status = "queued"
+                                db_doc.entity_status = "queued"
+                                session.add(db_doc)
                     except Exception:
-                        logger.exception("Failed to index release %s for search", document.id)
-                if not indexed:
-                    self.embedding_service.ensure_embedding(
-                        doc_type="release",
-                        document_id=document.id,
-                        text=document.text_clean or document.text_raw or "",
-                    )
-                self.linker.link_release(document, summary)
+                        logger.warning("Dispatch to queue failed for release %s", document.id, exc_info=True)
 
             total_items = len(seen_ids)
             logger.info(
@@ -255,13 +296,4 @@ class IngestionPipeline:
             return
         self.entity_store.persist(document.id, "release", text, result.entities)
 
-    def _maybe_generate_summary(self, document) -> Summary | None:
-        if not self.summary_service:
-            return None
-        try:
-            return self.summary_service.generate_if_needed(document)
-        except RuntimeError:
-            logger.warning("No active prompt templates found; skipping summary")
-        except Exception:
-            logger.exception("Failed to generate summary for %s", document.id)
-        return None
+    # Inline summarization removed in Week B; downstream via queue
