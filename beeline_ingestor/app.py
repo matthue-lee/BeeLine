@@ -462,6 +462,23 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
 
         return jsonify({"status": "done"})
 
+    @app.before_request
+    def _start_timer() -> None:
+        g._request_start = time.perf_counter()
+
+    @app.after_request
+    def _record_request_metrics(response):
+        start = getattr(g, "_request_start", None)
+        if start is not None:
+            duration = time.perf_counter() - start
+            record_http_request_metrics(
+                method=request.method,
+                endpoint=request.endpoint or request.path,
+                status_code=response.status_code,
+                duration_seconds=duration,
+            )
+        return response
+
     return app
 
 
@@ -488,19 +505,3 @@ def _convert_cost(amount: float | None, currency) -> float | None:
     if amount is None or not currency:
         return amount
     return round(amount * currency.usd_to_local_rate, 4)
-    @app.before_request
-    def _start_timer() -> None:
-        g._request_start = time.perf_counter()
-
-    @app.after_request
-    def _record_request_metrics(response):
-        start = getattr(g, "_request_start", None)
-        if start is not None:
-            duration = time.perf_counter() - start
-            record_http_request_metrics(
-                method=request.method,
-                endpoint=request.endpoint or request.path,
-                status_code=response.status_code,
-                duration_seconds=duration,
-            )
-        return response

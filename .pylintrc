@@ -1,0 +1,13 @@
+[MAIN]
+# Exclude Alembic migrations from analysis
+ignore-paths = ^alembic/
+
+[MESSAGES CONTROL]
+# Suppress all non-error categories (convention, refactor, warning)
+# and the SQLAlchemy func.* false positive (E1102 not-callable):
+#   SQLAlchemy's func proxy is dynamically callable; pylint cannot infer
+#   this so func.count() / func.sum() etc. always fire as false positives.
+disable = C, R, W, not-callable
+
+[FORMAT]
+max-line-length = 120
