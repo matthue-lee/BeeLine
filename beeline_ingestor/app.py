@@ -16,6 +16,8 @@ from .ingestion import IngestionPipeline
 from .models import DailyCost, DocumentStatus, JobRun, LLMCall, NewsArticle, ReleaseArticleLink, ReleaseDocument, Summary
 from .observability import init_sentry, render_metrics, record_http_request_metrics
 from .emailer import EmailSender
+from .summarization.service import SummaryService, _payload_from_model
+from .verification.service import VerificationService
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
     app_config = config or AppConfig.from_env()
     app.config["APP_CONFIG"] = app_config
     app.pipeline = IngestionPipeline(app_config)  # type: ignore[attr-defined]
+    app.summary_service = SummaryService(app_config, app.pipeline.database)  # type: ignore[attr-defined]
     email_sender = EmailSender(app_config.smtp)
     admin_auth_service = AdminAuthService(app_config.admin_auth, app.pipeline.database, email_sender=email_sender)
     app.extensions["admin_auth_service"] = admin_auth_service
@@ -356,6 +359,108 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
             ],
         }
         return jsonify(payload)
+
+    @app.route("/internal/process/summarize", methods=["POST"])
+    def internal_summarize() -> Any:
+        """Called by the summarize BullMQ worker to run LLM summarization for a release."""
+        payload = request.get_json(silent=True) or {}
+        release_id = payload.get("release_id")
+        if not release_id:
+            return jsonify({"error": "release_id required"}), 400
+
+        pipeline: IngestionPipeline = app.pipeline  # type: ignore[attr-defined]
+
+        with pipeline.database.session() as session:
+            release = session.get(ReleaseDocument, release_id)
+            if not release:
+                return jsonify({"error": f"release {release_id} not found"}), 404
+            release.summary_status = "running"
+            session.add(release)
+
+        try:
+            summary = app.summary_service.generate_if_needed(release, skip_verification=True)  # type: ignore[attr-defined]
+        except Exception as exc:
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, release_id)
+                if doc:
+                    doc.summary_status = "failed"
+                    session.add(doc)
+            logger.exception("Summarization failed for release %s", release_id)
+            return jsonify({"error": str(exc)}), 500
+
+        with pipeline.database.session() as session:
+            doc = session.get(ReleaseDocument, release_id)
+            if doc:
+                doc.summary_status = "done"
+                session.add(doc)
+
+        if not summary:
+            return jsonify({"summary_id": None, "release_id": release_id, "claim_batch": [], "status": "done"})
+
+        claim_batch = [
+            c.get("text", "") if isinstance(c, dict) else str(c)
+            for c in (summary.claims or [])
+            if (c.get("text") if isinstance(c, dict) else c)
+        ]
+        return jsonify({
+            "summary_id": str(summary.id),
+            "release_id": release_id,
+            "claim_batch": claim_batch,
+            "status": "done",
+        })
+
+    @app.route("/internal/process/verify", methods=["POST"])
+    def internal_verify() -> Any:
+        """Called by the verify BullMQ worker to run claim verification for a summary."""
+        payload = request.get_json(silent=True) or {}
+        summary_id = payload.get("summary_id")
+        release_id = payload.get("release_id")
+        if not summary_id or not release_id:
+            return jsonify({"error": "summary_id and release_id required"}), 400
+
+        pipeline: IngestionPipeline = app.pipeline  # type: ignore[attr-defined]
+
+        with pipeline.database.session() as session:
+            from sqlalchemy import select as sa_select
+            summary = session.execute(
+                sa_select(Summary).where(Summary.id == summary_id)
+            ).scalar_one_or_none()
+            if not summary:
+                return jsonify({"error": f"summary {summary_id} not found"}), 404
+            release = session.get(ReleaseDocument, release_id)
+            if not release:
+                return jsonify({"error": f"release {release_id} not found"}), 404
+            release.verify_status = "running"
+            session.add(release)
+
+        claim_batch = payload.get("claim_batch") or []
+        if not claim_batch:
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, release_id)
+                if doc:
+                    doc.verify_status = "done"
+                    session.add(doc)
+            return jsonify({"status": "done", "verdicts": []})
+
+        try:
+            summary_payload = _payload_from_model(summary)
+            app.summary_service.verification_service.process_summary(release, summary, summary_payload)  # type: ignore[attr-defined]
+        except Exception as exc:
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, release_id)
+                if doc:
+                    doc.verify_status = "failed"
+                    session.add(doc)
+            logger.exception("Verification failed for release %s", release_id)
+            return jsonify({"error": str(exc)}), 500
+
+        with pipeline.database.session() as session:
+            doc = session.get(ReleaseDocument, release_id)
+            if doc:
+                doc.verify_status = "done"
+                session.add(doc)
+
+        return jsonify({"status": "done"})
 
     return app
 

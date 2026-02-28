@@ -152,6 +152,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PYTHON_API_URL: ${PYTHON_API_URL:-http://ingestion-api:8000}
       WORKER_QUEUE: ${WORKER_QUEUE:-ingest}
       WORKER_NAME: ${WORKER_NAME:-node-worker}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}

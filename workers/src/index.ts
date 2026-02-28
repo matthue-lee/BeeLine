@@ -1,6 +1,7 @@
 import { loadConfig, QueueName } from './config';
 import { IngestWorker } from './workers/ingestWorker';
 import { SummarizeWorker } from './workers/summarizeWorker';
+import { VerifyWorker } from './workers/verifyWorker';
 import { startOrchestrator } from './orchestration/JobOrchestrator';
 import { startMetricsServer } from './metrics/server';
 import { createQueue } from './queues';
@@ -29,6 +30,9 @@ async function bootstrap(): Promise<void> {
       break;
     case 'summarize':
       await new SummarizeWorker(queueName, config).start();
+      break;
+    case 'verify':
+      await new VerifyWorker(queueName, config).start();
       break;
     default:
       throw new Error(`Queue ${queueName} not yet implemented`);

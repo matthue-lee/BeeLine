@@ -96,7 +96,7 @@ class SummaryService:
         self.cache = SummaryCache(ttl_seconds=ttl_seconds)
         self.verification_service = VerificationService(config, database, llm_client=self.llm_client)
 
-    def generate_if_needed(self, document: ReleaseDocument) -> Optional[Summary]:
+    def generate_if_needed(self, document: ReleaseDocument, *, skip_verification: bool = False) -> Optional[Summary]:
         start = perf_counter()
         existing = self.repo.get_by_release(document.id)
         if existing:
@@ -137,9 +137,10 @@ class SummaryService:
         )
         self.cache.invalidate(document.id)
         self.cache.set(document.id, result.payload)
-        try:
-            self.verification_service.process_summary(document, summary, result.payload)
-        except Exception:  # pragma: no cover - verification failures shouldn't crash summarization
-            logger.exception("Verification pipeline failed for release %s", document.id)
+        if not skip_verification:
+            try:
+                self.verification_service.process_summary(document, summary, result.payload)
+            except Exception:  # pragma: no cover - verification failures shouldn't crash summarization
+                logger.exception("Verification pipeline failed for release %s", document.id)
         record_summary_metrics("success", duration_seconds=perf_counter() - start)
         return summary

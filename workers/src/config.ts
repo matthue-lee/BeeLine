@@ -24,6 +24,7 @@ export interface AppConfig {
   redisTls: boolean;
   redisKeyPrefix: string;
   dbUrl: string;
+  pythonApiUrl: string;
   workerName: string;
   concurrency: number;
   metricsPort: number;
@@ -40,6 +41,7 @@ export function loadConfig(): AppConfig {
     redisTls,
     redisKeyPrefix: process.env.REDIS_QUEUE_PREFIX ?? 'beeline',
     dbUrl: process.env.DATABASE_URL ?? 'postgresql://beeline:beeline@localhost:5432/beeline',
+    pythonApiUrl: process.env.PYTHON_API_URL ?? 'http://localhost:8000',
     workerName: process.env.WORKER_NAME ?? 'beeline-worker',
     concurrency: parseInt(process.env.WORKER_CONCURRENCY ?? '5', 10),
     metricsPort,
