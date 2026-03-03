@@ -81,7 +81,7 @@ class IngestionPipeline:
             except RuntimeError:
                 logger.exception("Entity extraction disabled due to initialisation failure")
                 self.entity_service = None
-        # Queue dispatcher for decoupled stages (Week B)
+        # Queue dispatcher for decoupled stage processing
         self.queue_dispatcher: QueueDispatcher | None = None
         try:
             self.queue_dispatcher = QueueDispatcher()
@@ -133,7 +133,7 @@ class IngestionPipeline:
                     failed += 1
                     continue
 
-                # Decoupled stage dispatch: summarize, embed, entity_extract
+                # Downstream stage processing: dispatched to BullMQ queues
                 text = (document.text_clean or document.text_raw or "").strip()
                 if not text:
                     skipped += 1
@@ -285,15 +285,3 @@ class IngestionPipeline:
             db_run.status = status
             session.add(db_run)
 
-    def _run_entity_extraction(self, document) -> None:
-        if not self.entity_service or not self.entity_store:
-            return
-        text = (document.text_clean or document.text_raw or "").strip()
-        if not text:
-            return
-        result = self.entity_service.extract(text, document.id, "release")
-        if result.skipped or not result.entities:
-            return
-        self.entity_store.persist(document.id, "release", text, result.entities)
-
-    # Inline summarization removed in Week B; downstream via queue

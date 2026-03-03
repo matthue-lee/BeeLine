@@ -342,22 +342,60 @@ def create_admin_blueprint(
     @require_admin()
     def list_job_runs() -> dict:
         limit = min(int(request.args.get("limit", 50)), 200)
+        stage_filter = request.args.get("stage")
+        release_id_filter = request.args.get("release_id")
+        status_filter = request.args.get("status")
         with database.session() as session:
             stmt = select(JobRun).order_by(JobRun.started_at.desc()).limit(limit)
+            if stage_filter:
+                stmt = stmt.where(JobRun.stage == stage_filter)
+            if release_id_filter:
+                stmt = stmt.where(JobRun.release_id == release_id_filter)
+            if status_filter:
+                stmt = stmt.where(JobRun.status == status_filter)
             rows = session.execute(stmt).scalars().all()
         return {
             "items": [
                 {
                     "id": job.id,
                     "job_type": job.job_type,
+                    "stage": job.stage.value if job.stage else None,
+                    "release_id": job.release_id,
+                    "trigger_job_id": job.trigger_job_id,
                     "status": job.status,
                     "started_at": job.started_at.isoformat() if job.started_at else None,
                     "finished_at": job.finished_at.isoformat() if job.finished_at else None,
                     "duration_ms": job.duration_ms,
+                    "error": job.error_message,
                 }
                 for job in rows
-            ]
+            ],
+            "limit": limit,
         }
+
+    @bp.route("/job-runs/stage-summary", methods=["GET"])
+    @require_admin()
+    def job_runs_stage_summary() -> dict:
+        """Return job counts grouped by (stage, status) for dashboard queue view."""
+        hours = min(int(request.args.get("hours", 24)), 24 * 7)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        with database.session() as session:
+            rows = session.execute(
+                select(
+                    JobRun.stage,
+                    JobRun.status,
+                    func.count().label("count"),
+                )
+                .where(JobRun.started_at >= since)
+                .where(JobRun.stage.isnot(None))
+                .group_by(JobRun.stage, JobRun.status)
+                .order_by(JobRun.stage, JobRun.status)
+            ).all()
+        summary: dict[str, dict[str, int]] = {}
+        for stage, status, count in rows:
+            key = stage.value if hasattr(stage, "value") else str(stage)
+            summary.setdefault(key, {})[status] = count
+        return {"hours": hours, "stages": summary}
 
     @bp.route("/articles", methods=["GET"])
     @require_admin()
@@ -475,6 +513,26 @@ def create_admin_blueprint(
                 {article.id: article for _, article in link_rows},
             )
 
+            stage_job_rows = session.execute(
+                select(JobRun)
+                .where(JobRun.release_id == release.id)
+                .order_by(JobRun.started_at.asc())
+            ).scalars().all()
+
+        stage_jobs = [
+            {
+                "id": job.id,
+                "stage": job.stage.value if job.stage else job.job_type,
+                "status": job.status,
+                "started_at": job.started_at.isoformat() if job.started_at else None,
+                "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+                "duration_ms": job.duration_ms,
+                "error": job.error_message,
+                "trigger_job_id": job.trigger_job_id,
+            }
+            for job in stage_job_rows
+        ]
+
         payload = {
             "release": _serialize_release(release),
             "ingestion": _serialize_ingest_metadata(release, job_row),
@@ -483,6 +541,7 @@ def create_admin_blueprint(
             "entity_snapshot": entity_snapshot,
             "cross_links": cross_links,
             "fallbacks": _derive_fallback_flags(summary, claims_debug, cross_links),
+            "stage_jobs": stage_jobs,
         }
         return jsonify(payload)
 

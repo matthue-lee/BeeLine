@@ -158,6 +158,8 @@ class AppConfig:
     currency: CurrencyConfig = field(default_factory=CurrencyConfig)
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     skip_create_all: bool = bool(int(os.getenv("SKIP_CREATE_ALL", "0")))
+    # Accepted value: "queue" (inline mode removed in Week F).
+    pipeline_mode: str = field(default_factory=lambda: os.getenv("PIPELINE_MODE", "queue"))
 
     @classmethod
     def from_env(cls) -> "AppConfig":
