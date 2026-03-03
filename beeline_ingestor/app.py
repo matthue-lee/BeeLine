@@ -462,6 +462,186 @@ def create_app(config: Optional[AppConfig] = None) -> Flask:
 
         return jsonify({"status": "done"})
 
+    @app.route("/internal/process/embed", methods=["POST"])
+    def internal_embed() -> Any:
+        """Called by the embed BullMQ worker to generate and store an embedding."""
+        payload = request.get_json(silent=True) or {}
+        source_type = payload.get("source_type")
+        source_id = payload.get("source_id")
+        if not source_type or not source_id:
+            return jsonify({"error": "source_type and source_id required"}), 400
+
+        pipeline: IngestionPipeline = app.pipeline  # type: ignore[attr-defined]
+
+        text: str = ""
+        if source_type == "release":
+            with pipeline.database.session() as session:
+                release = session.get(ReleaseDocument, source_id)
+                if not release:
+                    return jsonify({"error": f"release {source_id} not found"}), 404
+                release.embed_status = "running"
+                session.add(release)
+                text = (release.text_clean or release.text_raw or "").strip()
+        elif source_type == "article":
+            with pipeline.database.session() as session:
+                article = session.execute(
+                    select(NewsArticle).where(NewsArticle.id == source_id)
+                ).scalar_one_or_none()
+                if not article:
+                    return jsonify({"error": f"article {source_id} not found"}), 404
+                text = (article.text_clean or article.summary or "").strip()
+        else:
+            return jsonify({"error": f"unsupported source_type: {source_type}"}), 400
+
+        if not text:
+            if source_type == "release":
+                with pipeline.database.session() as session:
+                    doc = session.get(ReleaseDocument, source_id)
+                    if doc:
+                        doc.embed_status = "done"
+                        session.add(doc)
+            return jsonify({
+                "source_type": source_type, "source_id": source_id,
+                "release_id": source_id if source_type == "release" else None,
+                "candidate_article_ids": [], "status": "done",
+            })
+
+        try:
+            result = pipeline.embedding_service.ensure_embedding(
+                doc_type=source_type, document_id=source_id, text=text
+            )
+        except Exception as exc:
+            if source_type == "release":
+                with pipeline.database.session() as session:
+                    doc = session.get(ReleaseDocument, source_id)
+                    if doc:
+                        doc.embed_status = "failed"
+                        session.add(doc)
+            logger.exception("Embedding failed for %s %s", source_type, source_id)
+            return jsonify({"error": str(exc)}), 500
+
+        if source_type == "release":
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, source_id)
+                if doc:
+                    doc.embed_status = "done"
+                    session.add(doc)
+
+        return jsonify({
+            "source_type": source_type,
+            "source_id": source_id,
+            "release_id": source_id if source_type == "release" else None,
+            "text_hash": result.text_hash if result else None,
+            "candidate_article_ids": [],
+            "status": "done",
+        })
+
+    @app.route("/internal/process/link", methods=["POST"])
+    def internal_link() -> Any:
+        """Called by the link BullMQ worker to cross-link a release to news articles."""
+        payload = request.get_json(silent=True) or {}
+        release_id = payload.get("release_id")
+        if not release_id:
+            return jsonify({"error": "release_id required"}), 400
+
+        pipeline: IngestionPipeline = app.pipeline  # type: ignore[attr-defined]
+
+        with pipeline.database.session() as session:
+            release = session.get(ReleaseDocument, release_id)
+            if not release:
+                return jsonify({"error": f"release {release_id} not found"}), 404
+            summary = session.execute(
+                select(Summary).where(Summary.release_id == release_id)
+            ).scalar_one_or_none()
+            release.link_status = "running"
+            session.add(release)
+
+        try:
+            pipeline.linker.link_release(release, summary)
+        except Exception as exc:
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, release_id)
+                if doc:
+                    doc.link_status = "failed"
+                    session.add(doc)
+            logger.exception("Cross-linking failed for release %s", release_id)
+            return jsonify({"error": str(exc)}), 500
+
+        with pipeline.database.session() as session:
+            doc = session.get(ReleaseDocument, release_id)
+            if doc:
+                doc.link_status = "done"
+                session.add(doc)
+
+        return jsonify({"status": "done"})
+
+    @app.route("/internal/process/entity_extract", methods=["POST"])
+    def internal_entity_extract() -> Any:
+        """Called by the entity_extract BullMQ worker to run NER on a source document."""
+        payload = request.get_json(silent=True) or {}
+        source_type = payload.get("source_type")
+        source_id = payload.get("source_id")
+        if not source_type or not source_id:
+            return jsonify({"error": "source_type and source_id required"}), 400
+
+        pipeline: IngestionPipeline = app.pipeline  # type: ignore[attr-defined]
+
+        if not pipeline.entity_service or not pipeline.entity_store:
+            return jsonify({"error": "entity extraction not enabled on this instance"}), 503
+
+        text: str = ""
+        if source_type == "release":
+            with pipeline.database.session() as session:
+                release = session.get(ReleaseDocument, source_id)
+                if not release:
+                    return jsonify({"error": f"release {source_id} not found"}), 404
+                release.entity_status = "running"
+                session.add(release)
+                text = (release.text_clean or release.text_raw or "").strip()
+        elif source_type == "article":
+            with pipeline.database.session() as session:
+                article = session.execute(
+                    select(NewsArticle).where(NewsArticle.id == source_id)
+                ).scalar_one_or_none()
+                if not article:
+                    return jsonify({"error": f"article {source_id} not found"}), 404
+                text = (article.text_clean or article.summary or "").strip()
+        else:
+            return jsonify({"error": f"unsupported source_type: {source_type}"}), 400
+
+        if not text:
+            if source_type == "release":
+                with pipeline.database.session() as session:
+                    doc = session.get(ReleaseDocument, source_id)
+                    if doc:
+                        doc.entity_status = "done"
+                        session.add(doc)
+            return jsonify({"status": "done", "entity_count": 0})
+
+        try:
+            result = pipeline.entity_service.extract(text, source_id, source_type)
+            if not result.skipped and result.entities:
+                pipeline.entity_store.persist(source_id, source_type, text, result.entities)
+            entity_count = len(result.entities)
+        except Exception as exc:
+            if source_type == "release":
+                with pipeline.database.session() as session:
+                    doc = session.get(ReleaseDocument, source_id)
+                    if doc:
+                        doc.entity_status = "failed"
+                        session.add(doc)
+            logger.exception("Entity extraction failed for %s %s", source_type, source_id)
+            return jsonify({"error": str(exc)}), 500
+
+        if source_type == "release":
+            with pipeline.database.session() as session:
+                doc = session.get(ReleaseDocument, source_id)
+                if doc:
+                    doc.entity_status = "done"
+                    session.add(doc)
+
+        return jsonify({"status": "done", "entity_count": entity_count})
+
     @app.before_request
     def _start_timer() -> None:
         g._request_start = time.perf_counter()

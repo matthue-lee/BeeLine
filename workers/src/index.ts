@@ -2,6 +2,9 @@ import { loadConfig, QueueName } from './config';
 import { IngestWorker } from './workers/ingestWorker';
 import { SummarizeWorker } from './workers/summarizeWorker';
 import { VerifyWorker } from './workers/verifyWorker';
+import { EmbedWorker } from './workers/embedWorker';
+import { LinkWorker } from './workers/linkWorker';
+import { EntityExtractWorker } from './workers/entityExtractWorker';
 import { startOrchestrator } from './orchestration/JobOrchestrator';
 import { startMetricsServer } from './metrics/server';
 import { createQueue } from './queues';
@@ -33,6 +36,15 @@ async function bootstrap(): Promise<void> {
       break;
     case 'verify':
       await new VerifyWorker(queueName, config).start();
+      break;
+    case 'embed':
+      await new EmbedWorker(queueName, config).start();
+      break;
+    case 'link':
+      await new LinkWorker(queueName, config).start();
+      break;
+    case 'entity_extract':
+      await new EntityExtractWorker(queueName, config).start();
       break;
     default:
       throw new Error(`Queue ${queueName} not yet implemented`);

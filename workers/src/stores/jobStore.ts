@@ -94,9 +94,20 @@ export class JobStore {
     return result.rows;
   }
 
-  async fetchFailedJobs(limit = 25) {
+  async fetchFailedJobs(limit = 25, stage?: string) {
+    if (stage) {
+      const result = await this.pool.query(
+        `SELECT id, job_type, stage, release_id, payload, error_message, retry_count, max_retries
+         FROM failed_jobs
+         WHERE stage = $2
+         ORDER BY failed_at ASC
+         LIMIT $1`,
+        [limit, stage]
+      );
+      return result.rows;
+    }
     const result = await this.pool.query(
-      `SELECT id, job_type, payload, retry_count, max_retries
+      `SELECT id, job_type, stage, release_id, payload, error_message, retry_count, max_retries
        FROM failed_jobs
        ORDER BY failed_at ASC
        LIMIT $1`,
